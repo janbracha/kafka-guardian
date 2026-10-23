@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ksg.fullname" . }}-config
+  labels:
+    {{- include "ksg.labels" . | nindent 4 }}
+data:
+  proxy-config.yaml: |
+    management:
+      bindAddress: 0.0.0.0
+      port: 9190
+      endpoints:
+        prometheus: {}
+    network:
+      proxy:
+        shutdownQuietPeriod: 2s
+        shutdownTimeout: 15s
+      management:
+        shutdownQuietPeriod: 1s
+    clusterDefinitions:
+      - name: strimzi
+        bootstrapServers: {{ include "ksg.kafkaBootstrap" . }}
+        {{- if .Values.kafka.tls.enabled }}
+        tls:
+          trust:
+            storeFile: /etc/kafka-schema-guardian/tls/upstream-ca/ca.crt
+            storeType: PEM
+          {{- if .Values.kafka.tls.clientCertSecret }}
+          key:
+            privateKeyFile: /etc/kafka-schema-guardian/tls/upstream-client/tls.key
+            certificateFile: /etc/kafka-schema-guardian/tls/upstream-client/tls.crt
+          {{- end }}
+        {{- end }}
+    filterDefinitions:
+      - name: schema-guardian
+        type: SchemaGuardian
+        config:
+          rulesFile: /etc/kafka-schema-guardian/rules/rules.yaml
+      {{- if .Values.proxy.connectionExpiration.enabled }}
+      - name: connection-expiration
+        type: ConnectionExpiration
+        config:
+          maxAge: {{ .Values.proxy.connectionExpiration.maxAge }}
+          {{- if .Values.proxy.connectionExpiration.jitter }}
+          jitter: {{ .Values.proxy.connectionExpiration.jitter }}
+          {{- end }}
+      {{- end }}
+    # The guardian must stay first.
+    defaultFilters:
+      - schema-guardian
+      {{- if .Values.proxy.connectionExpiration.enabled }}
+      - connection-expiration
+      {{- end }}
+    virtualClusters:
+      - name: guardian
+        target:
+          cluster: strimzi
+        drainTimeout: {{ .Values.proxy.drainTimeout }}
+        gateways:
+          - name: {{ .Values.mode }}
+            portIdentifiesNode:
+              bootstrapAddress: {{ include "ksg.advertisedHost" . }}:{{ int .Values.proxy.bootstrapPort }}
+              advertisedBrokerAddressPattern: {{ include "ksg.advertisedHost" . }}
+              nodeStartPort: {{ int .Values.proxy.nodeStartPort }}
+              nodeIdRanges:
+              {{- range .Values.proxy.nodeIdRanges }}
+                - name: {{ .name }}
+                  start: {{ int .start }}
+                  end: {{ int .end }}
+              {{- end }}
+            {{- if ne .Values.mode "plaintext" }}
+            tls:
+              key:
+                privateKeyFile: /etc/kafka-schema-guardian/tls/server/tls.key
+                certificateFile: /etc/kafka-schema-guardian/tls/server/tls.crt
+              {{- if eq .Values.mode "mtls" }}
+              trust:
+                storeFile: /etc/kafka-schema-guardian/tls/client-ca/ca.crt
+                storeType: PEM
+                trustOptions:
+                  clientAuth: REQUIRED
+              {{- end }}
+            {{- end }}

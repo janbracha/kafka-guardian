@@ -1,0 +1,17 @@
+.git
+.github
+.idea
+.vscode
+target
+**/target
+*.iml
+*.log
+deploy/helm
+node_modules
+# Secrets and key material must never end up in the build context
+*.pem
+*.key
+*.p12
+*.jks
+*.crt
+secret*.yaml

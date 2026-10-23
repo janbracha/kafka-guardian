@@ -1,0 +1,8 @@
+# Default rules baked into the image: effectively "deny everything". The placeholder topic does not exist and its schema ID
+# 2147483647 is not used by any registry. Mount your own rules over /etc/kafka-schema-guardian/rules (ConfigMap).
+defaultPolicy: DENY
+
+topics:
+  __guardian-placeholder:
+    allowedSchemaIds:
+      - 2147483647

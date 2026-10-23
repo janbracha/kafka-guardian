@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: kafka-proxy
+
+# Apply with:  kubectl apply -k deploy/optional   (or: make deploy-optional)
+# servicemonitor.yaml needs the Prometheus Operator CRDs; delete it from the list if you do not run the operator.
+resources:
+  - servicemonitor.yaml
+  - hpa.yaml

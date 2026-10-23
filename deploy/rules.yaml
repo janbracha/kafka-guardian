@@ -1,0 +1,22 @@
+# Whitelist of Confluent schema IDs per topic. Loaded once at start up; a change needs a rolling restart.
+# Kustomize turns this file into a ConfigMap whose name carries a content hash, so editing it rolls the Deployment.
+defaultPolicy: DENY
+
+topics:
+  TEST:
+    allowedSchemaIds:
+      - 1
+      - 2
+      - 3
+
+  TEST2:
+    allowedSchemaIds:
+      - 4
+      - 5
+      - 6
+
+metrics:
+  includeSchemaIdLabel: false
+
+logging:
+  maxRejectLogsPerSecond: 5

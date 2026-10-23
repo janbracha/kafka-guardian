@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kafka-schema-guardian
+  labels:
+    app.kubernetes.io/name: kafka-schema-guardian
+    app.kubernetes.io/part-of: kafka-schema-guardian
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka-schema-guardian

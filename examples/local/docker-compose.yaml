@@ -1,0 +1,41 @@
+# Local playground: a single-node Kafka (KRaft) that is reachable ONLY through the guardian.
+#   make image IMAGE_REGISTRY=local IMAGE_REPOSITORY=kafka-schema-guardian IMAGE_TAG=local
+#   docker compose -f examples/local/docker-compose.yaml up
+# Producers use localhost:9192. The broker's own port is not published, so it cannot be bypassed from the host.
+services:
+  kafka:
+    image: apache/kafka:4.3.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  guardian:
+    image: local/kafka-schema-guardian:local
+    depends_on:
+      - kafka
+    ports:
+      - "9192:9192" # bootstrap
+      - "9193:9193" # broker with node id 1
+      - "9190:9190" # /livez and /metrics
+    volumes:
+      - ./proxy-config.yaml:/etc/kafka-schema-guardian/config/proxy-config.yaml:ro
+      - ./rules.yaml:/etc/kafka-schema-guardian/rules/rules.yaml:ro
+    environment:
+      KROXYLICIOUS_LOG_FORMAT: text
+      KROXYLICIOUS_APP_LOG_LEVEL: INFO
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

@@ -1,0 +1,21 @@
+kafka-schema-guardian {{ .Chart.AppVersion }} installed as {{ include "ksg.fullname" . }} in {{ .Release.Namespace }} (mode: {{ .Values.mode }}).
+
+Producers bootstrap at:
+  {{ include "ksg.advertisedHost" . }}:{{ int .Values.proxy.bootstrapPort }}
+
+Secrets that must exist in {{ .Release.Namespace }} before the pods can start:
+{{- if ne .Values.mode "plaintext" }}
+  - {{ .Values.proxy.tls.serverSecret }} (tls.crt, tls.key)  certificate presented to producers
+{{- end }}
+{{- if eq .Values.mode "mtls" }}
+  - {{ .Values.proxy.tls.clientCaSecret }} (ca.crt)  CA of the producers' client certificates
+{{- end }}
+{{- if .Values.kafka.tls.enabled }}
+  - {{ .Values.kafka.tls.caSecret }} (ca.crt)  CA of the Kafka brokers
+{{- if .Values.kafka.tls.clientCertSecret }}
+  - {{ .Values.kafka.tls.clientCertSecret }} (tls.crt, tls.key)  certificate the proxy presents to the brokers
+{{- end }}
+{{- end }}
+
+Changing rules or the proxy configuration rolls the pods (checksum annotations). Rotating a Secret does not:
+  kubectl -n {{ .Release.Namespace }} rollout restart deployment/{{ include "ksg.fullname" . }}

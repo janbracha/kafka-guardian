@@ -1,0 +1,12 @@
+target/
+.idea/
+*.iml
+.vscode/
+.DS_Store
+*.log
+# local secrets
+*.pem
+*.key
+*.p12
+*.jks
+.env

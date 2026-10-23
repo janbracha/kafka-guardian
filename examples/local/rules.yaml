@@ -1,0 +1,7 @@
+defaultPolicy: DENY
+
+topics:
+  orders:
+    allowedSchemaIds:
+      - 1
+      - 2

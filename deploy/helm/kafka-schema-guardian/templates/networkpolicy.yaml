@@ -1,0 +1,59 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $nodes := include "ksg.nodePorts" . | fromJsonArray }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ksg.fullname" . }}
+  labels:
+    {{- include "ksg.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ksg.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.producerNamespaceLabels | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ int .Values.proxy.bootstrapPort }}
+        {{- range $nodes }}
+        - protocol: TCP
+          port: {{ .port | int }}
+        {{- end }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.monitoringNamespace }}
+      ports:
+        - protocol: TCP
+          port: 9190
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.kafka.namespace }}
+          podSelector:
+            matchLabels:
+              strimzi.io/cluster: {{ .Values.kafka.clusterName }}
+              strimzi.io/kind: Kafka
+      ports:
+        - protocol: TCP
+          port: {{ int .Values.kafka.bootstrapPort }}
+{{- end }}

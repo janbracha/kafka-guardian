@@ -1,0 +1,156 @@
+name: build
+
+# Build, test, scan and publish the kafka-schema-guardian image.
+# Every step that does real work is a `make` target or one plain command, so this file ports to GitLab CI / Azure DevOps
+# by wrapping the same commands. Third-party actions are pinned to major versions here; pin them to commit SHAs in a
+# locked-down organisation.
+#
+# Repository secrets:   REGISTRY_USERNAME, REGISTRY_PASSWORD
+# Repository variables: IMAGE_REGISTRY (e.g. registry.example.com), IMAGE_REPOSITORY (e.g. platform/kafka-schema-guardian),
+#                       COSIGN_ENABLED ("true" to sign the pushed image with Sigstore keyless signing)
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_REGISTRY: ${{ vars.IMAGE_REGISTRY }}
+  IMAGE_REPOSITORY: ${{ vars.IMAGE_REPOSITORY }}
+
+jobs:
+  # 1-5: compile, unit tests, integration tests (real Kroxylicious + in-VM Kafka broker), static checks, plugin JAR.
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Compile, unit tests, integration tests, Enforcer, Spotless
+        run: make verify
+      - name: CycloneDX SBOM of the plugin and its dependencies
+        run: ./mvnw -B -ntp org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom -DoutputFormat=json
+      - name: Collect results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-results
+          path: |
+            target/kafka-schema-guardian-*.jar
+            target/bom.json
+            target/surefire-reports
+            target/failsafe-reports
+          if-no-files-found: warn
+
+  manifests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Helm lint and render
+        run: |
+          helm lint deploy/helm/kafka-schema-guardian
+          helm template ksg deploy/helm/kafka-schema-guardian --namespace kafka-proxy \
+            --set serviceMonitor.enabled=true --set autoscaling.enabled=true > /tmp/helm.yaml
+      - name: Kustomize render
+        run: |
+          kubectl kustomize deploy > /tmp/kustomize.yaml
+          kubectl kustomize deploy/overlays/tls > /dev/null
+          kubectl kustomize deploy/overlays/plaintext > /dev/null
+      - name: Validate against the Kubernetes schemas
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz -C /tmp kubeconform
+          /tmp/kubeconform -strict -summary -ignore-missing-schemas /tmp/helm.yaml /tmp/kustomize.yaml
+
+  # 6-11: image, vulnerability scan, SBOM, publish with an immutable tag, optional signature.
+  image:
+    needs: [verify, manifests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      id-token: write # Sigstore keyless signing
+    env:
+      CONTAINER_ENGINE: docker
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute the immutable tag
+        id: meta
+        run: |
+          version=$(./mvnw -q -B -ntp org.apache.maven.plugins:maven-help-plugin:3.5.1:evaluate -Dexpression=project.version -DforceStdout)
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          # <version>-<commit>: never moves, so a deployment always points at exactly one build.
+          echo "tag=${version}-$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build the image (this runs the unit tests again inside the Dockerfile)
+        run: make image IMAGE_REGISTRY=local IMAGE_REPOSITORY=kafka-schema-guardian IMAGE_TAG=${{ steps.meta.outputs.tag }}
+
+      - name: Vulnerability scan (fails on fixable HIGH/CRITICAL findings)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: local/kafka-schema-guardian:${{ steps.meta.outputs.tag }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      - name: SBOM of the image (SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: local/kafka-schema-guardian:${{ steps.meta.outputs.tag }}
+          format: spdx-json
+          output-file: image-sbom.spdx.json
+          artifact-name: image-sbom.spdx.json
+
+      # Multi-architecture builds need the buildx container driver, which cannot load images into the local daemon,
+      # so it is only set up after the scan above.
+      - uses: docker/setup-qemu-action@v3
+        if: github.event_name != 'pull_request'
+      - uses: docker/setup-buildx-action@v3
+        if: github.event_name != 'pull_request'
+
+      - name: Log in to the registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.IMAGE_REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      # Only reached when everything above succeeded; pull requests never publish.
+      - name: Publish the multi-architecture image (linux/amd64, linux/arm64)
+        if: github.event_name != 'pull_request'
+        id: push
+        run: |
+          make image-push IMAGE_TAG=${{ steps.meta.outputs.tag }}
+          digest=$(docker buildx imagetools inspect "${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}:${{ steps.meta.outputs.tag }}" --format '{{json .Manifest.Digest}}' | tr -d '"')
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "Published ${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}@${digest}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install Cosign
+        if: github.event_name != 'pull_request' && vars.COSIGN_ENABLED == 'true'
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign the image by digest (keyless)
+        if: github.event_name != 'pull_request' && vars.COSIGN_ENABLED == 'true'
+        run: cosign sign --yes "${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}@${{ steps.push.outputs.digest }}"
+
+      - name: Attach the SBOM to the signed image
+        if: github.event_name != 'pull_request' && vars.COSIGN_ENABLED == 'true'
+        run: >
+          cosign attest --yes --type spdxjson --predicate image-sbom.spdx.json
+          "${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}@${{ steps.push.outputs.digest }}"

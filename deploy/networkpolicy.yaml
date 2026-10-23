@@ -1,0 +1,63 @@
+# Default-deny for the proxy pods, then explicit openings. Adapt the namespace labels to your cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kafka-schema-guardian
+  labels:
+    app.kubernetes.io/name: kafka-schema-guardian
+    app.kubernetes.io/part-of: kafka-schema-guardian
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kafka-schema-guardian
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Producers: only namespaces labelled  kafka-schema-guardian/access=allowed  (kubectl label ns <ns> kafka-schema-guardian/access=allowed)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kafka-schema-guardian/access: allowed
+      ports:
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9093
+        - protocol: TCP
+          port: 9094
+        - protocol: TCP
+          port: 9095
+    # Prometheus (metrics) and kubelet probes use the management port.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9190
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Strimzi brokers (TLS listener). Bootstrap and per-broker connections both go to port 9093.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kafka
+          podSelector:
+            matchLabels:
+              strimzi.io/cluster: my-cluster
+              strimzi.io/kind: Kafka
+      ports:
+        - protocol: TCP
+          port: 9093

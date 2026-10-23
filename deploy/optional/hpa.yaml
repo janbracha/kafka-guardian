@@ -1,0 +1,38 @@
+# Optional. Scales on CPU, which is what drives the proxy (TLS, decompression of compressed batches, Netty).
+# Scale-out does NOT move existing producer connections: new replicas only receive new connections. Pair this with the
+# ConnectionExpiration filter in proxy-config.yaml so long-lived connections are periodically re-balanced.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: kafka-schema-guardian
+  labels:
+    app.kubernetes.io/name: kafka-schema-guardian
+    app.kubernetes.io/part-of: kafka-schema-guardian
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kafka-schema-guardian
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    # Scaling in closes connections; do it slowly.
+    scaleDown:
+      stabilizationWindowSeconds: 600
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 300

@@ -1,0 +1,73 @@
+# Default proxy configuration of the kafka-schema-guardian image and of the Kubernetes manifests: mTLS towards producers.
+# Kroxylicious does not substitute environment variables, so every value below is a literal.
+# Adjust: Kafka cluster/namespace (clusterDefinitions), the advertised host name and the node ID range (gateways).
+management:
+  bindAddress: 0.0.0.0
+  port: 9190
+  endpoints:
+    prometheus: {}
+
+network:
+  proxy:
+    shutdownQuietPeriod: 2s
+    shutdownTimeout: 15s
+  management:
+    shutdownQuietPeriod: 1s
+
+clusterDefinitions:
+  - name: strimzi
+    # Strimzi "tls" listener of the Kafka cluster "my-cluster" in the namespace "kafka"
+    bootstrapServers: my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9093
+    tls:
+      trust:
+        # Strimzi cluster CA certificate (Secret my-cluster-cluster-ca-cert, key ca.crt)
+        storeFile: /etc/kafka-schema-guardian/tls/upstream-ca/ca.crt
+        storeType: PEM
+      key:
+        # Client certificate of the KafkaUser used by the proxy (mTLS towards the brokers)
+        privateKeyFile: /etc/kafka-schema-guardian/tls/upstream-client/tls.key
+        certificateFile: /etc/kafka-schema-guardian/tls/upstream-client/tls.crt
+
+filterDefinitions:
+  - name: schema-guardian
+    type: SchemaGuardian
+    config:
+      rulesFile: /etc/kafka-schema-guardian/rules/rules.yaml
+  - name: connection-expiration
+    type: ConnectionExpiration
+    config:
+      # Producers reconnect (through the Service) roughly every 30 minutes, which spreads connections over new replicas.
+      maxAge: 30m
+      jitter: 5m
+
+# The guardian must be first: nothing may reach another filter or the broker before it has approved the request.
+defaultFilters:
+  - schema-guardian
+  - connection-expiration
+
+virtualClusters:
+  - name: guardian
+    target:
+      cluster: strimzi
+    drainTimeout: 10s
+    gateways:
+      - name: mtls
+        portIdentifiesNode:
+          # Bootstrap address and the host name that Metadata responses give to clients. Brokers are told apart by port:
+          # node 0 -> 9093, node 1 -> 9094, node 2 -> 9095. Every port is exposed by the bootstrap Service.
+          bootstrapAddress: kafka-schema-guardian-bootstrap.kafka-proxy.svc.cluster.local:9092
+          advertisedBrokerAddressPattern: kafka-schema-guardian-bootstrap.kafka-proxy.svc.cluster.local
+          nodeStartPort: 9093
+          nodeIdRanges:
+            - name: brokers
+              start: 0
+              end: 2
+        tls:
+          key:
+            privateKeyFile: /etc/kafka-schema-guardian/tls/server/tls.key
+            certificateFile: /etc/kafka-schema-guardian/tls/server/tls.crt
+          trust:
+            storeFile: /etc/kafka-schema-guardian/tls/client-ca/ca.crt
+            storeType: PEM
+            trustOptions:
+              clientAuth: REQUIRED

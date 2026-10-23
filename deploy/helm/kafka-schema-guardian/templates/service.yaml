@@ -1,0 +1,39 @@
+{{- $nodes := include "ksg.nodePorts" . | fromJsonArray }}
+# The address producers use (not the Strimzi bootstrap Service). One port per broker, see the proxy configuration.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ksg.fullname" . }}-bootstrap
+  labels:
+    {{- include "ksg.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka-ingress
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "ksg.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: kafka-bootstrap
+      port: {{ int .Values.proxy.bootstrapPort }}
+      targetPort: kafka-bootstrap
+    {{- range $nodes }}
+    - name: node-{{ .id | int }}
+      port: {{ .port | int }}
+      targetPort: node-{{ .id | int }}
+    {{- end }}
+---
+# Health (/livez) and Prometheus metrics (/metrics).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ksg.fullname" . }}-management
+  labels:
+    {{- include "ksg.labels" . | nindent 4 }}
+    app.kubernetes.io/component: management
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "ksg.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: management
+      port: 9190
+      targetPort: management

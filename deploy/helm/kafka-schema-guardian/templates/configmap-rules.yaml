@@ -1,0 +1,22 @@
+{{- include "ksg.validate" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ksg.fullname" . }}-rules
+  labels:
+    {{- include "ksg.labels" . | nindent 4 }}
+data:
+  rules.yaml: |
+    defaultPolicy: DENY
+    topics:
+    {{- range $topic, $cfg := .Values.rules.topics }}
+      {{ $topic | quote }}:
+        allowedSchemaIds:
+        {{- range $cfg.allowedSchemaIds }}
+          - {{ . | int64 }}
+        {{- end }}
+    {{- end }}
+    metrics:
+      includeSchemaIdLabel: {{ .Values.rules.metrics.includeSchemaIdLabel | default false }}
+    logging:
+      maxRejectLogsPerSecond: {{ .Values.rules.logging.maxRejectLogsPerSecond | default 5 | int }}

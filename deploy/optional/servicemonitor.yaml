@@ -1,0 +1,22 @@
+# Requires the Prometheus Operator CRDs. Selects the management Service and scrapes /metrics on port 9190.
+# Add the label your Prometheus instance selects on (e.g. release: kube-prometheus-stack) under metadata.labels.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kafka-schema-guardian
+  labels:
+    app.kubernetes.io/name: kafka-schema-guardian
+    app.kubernetes.io/part-of: kafka-schema-guardian
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka-schema-guardian
+      app.kubernetes.io/component: management
+  endpoints:
+    - port: management
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+  # One series per pod: the guardian metrics are per-replica and are summed in queries.
+  targetLabels:
+    - app.kubernetes.io/name

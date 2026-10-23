@@ -1,0 +1,46 @@
+# The address producers use. It is NOT the Strimzi bootstrap Service: producers talk to the proxy, the proxy talks to Strimzi.
+# The proxy tells clients in Metadata responses that every broker lives at this Service's DNS name, on one port per broker
+# (portIdentifiesNode). All ports below therefore have to be exposed and have to match proxy-config.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-schema-guardian-bootstrap
+  labels:
+    app.kubernetes.io/name: kafka-schema-guardian
+    app.kubernetes.io/component: kafka-ingress
+    app.kubernetes.io/part-of: kafka-schema-guardian
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: kafka-schema-guardian
+  ports:
+    - name: kafka-bootstrap
+      port: 9092
+      targetPort: kafka-bootstrap
+    - name: kafka-node-0
+      port: 9093
+      targetPort: kafka-node-0
+    - name: kafka-node-1
+      port: 9094
+      targetPort: kafka-node-1
+    - name: kafka-node-2
+      port: 9095
+      targetPort: kafka-node-2
+---
+# Health (/livez) and Prometheus metrics (/metrics). Kept apart from the Kafka Service so that it can be firewalled separately.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-schema-guardian-management
+  labels:
+    app.kubernetes.io/name: kafka-schema-guardian
+    app.kubernetes.io/component: management
+    app.kubernetes.io/part-of: kafka-schema-guardian
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: kafka-schema-guardian
+  ports:
+    - name: management
+      port: 9190
+      targetPort: management

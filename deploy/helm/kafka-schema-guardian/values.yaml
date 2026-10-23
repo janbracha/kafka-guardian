@@ -1,0 +1,134 @@
+# Default values. Every key is documented in the README, chapter "Helm".
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: registry.example.com/platform/kafka-schema-guardian
+  # Defaults to the chart appVersion. Prefer an immutable tag or a digest in production.
+  tag: ""
+  # If set, the digest wins over the tag: sha256:...
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+replicaCount: 3
+
+# How producers connect: mtls (TLS + client certificates), tls (server authentication only) or plaintext (no protection).
+mode: mtls
+
+# The Strimzi Kafka cluster behind the proxy.
+kafka:
+  clusterName: my-cluster
+  namespace: kafka
+  # Defaults to <clusterName>-kafka-bootstrap.<namespace>.svc.cluster.local
+  bootstrapHost: ""
+  bootstrapPort: 9093
+  tls:
+    enabled: true
+    # Secret with the Kafka cluster CA certificate under the key ca.crt (Strimzi: copy of <cluster>-cluster-ca-cert).
+    caSecret: kafka-schema-guardian-upstream-ca
+    # Secret with tls.crt and tls.key the proxy presents to the brokers (Strimzi: KafkaUser of type tls). Empty = no client certificate.
+    clientCertSecret: kafka-schema-guardian-upstream-client
+
+proxy:
+  # Host name given to producers in Metadata responses. Defaults to <fullname>-bootstrap.<namespace>.svc.cluster.local.
+  advertisedHost: ""
+  bootstrapPort: 9092
+  # Broker ports are assigned consecutively from here, in ascending node ID order.
+  nodeStartPort: 9093
+  # The node IDs of the Strimzi brokers (KafkaNodePool). Ranges are inclusive and must be listed in ascending order.
+  nodeIdRanges:
+    - name: brokers
+      start: 0
+      end: 2
+  drainTimeout: 10s
+  # Closes connections after maxAge (+- jitter) so producers reconnect and spread over all replicas.
+  connectionExpiration:
+    enabled: true
+    maxAge: 30m
+    jitter: 5m
+  tls:
+    # Secret with tls.crt/tls.key presented to producers (mode tls and mtls).
+    serverSecret: kafka-schema-guardian-server-tls
+    # Secret with ca.crt that signed the producers' certificates (mode mtls).
+    clientCaSecret: kafka-schema-guardian-client-ca
+  logFormat: json
+  logLevel: INFO
+  javaMaxMemRatio: 60
+  extraEnv: []
+
+# The whitelist. Only schema IDs are matched, never subjects or versions. The defaultPolicy is always DENY.
+rules:
+  topics:
+    TEST:
+      allowedSchemaIds: [1, 2, 3]
+    TEST2:
+      allowedSchemaIds: [4, 5, 6]
+  metrics:
+    includeSchemaIdLabel: false
+  logging:
+    maxRejectLogsPerSecond: 5
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+terminationGracePeriodSeconds: 45
+preStopSleepSeconds: 10
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+priorityClassName: ""
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 185
+  runAsGroup: 185
+  fsGroup: 185
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
+
+rollingUpdate:
+  maxSurge: 1
+  maxUnavailable: 0
+
+topologySpreadConstraints:
+  enabled: true
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+autoscaling:
+  enabled: false
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+networkPolicy:
+  enabled: true
+  # Namespaces whose pods may produce (kubectl label ns <ns> kafka-schema-guardian/access=allowed).
+  producerNamespaceLabels:
+    kafka-schema-guardian/access: allowed
+  monitoringNamespace: monitoring
+
+serviceMonitor:
+  # Needs the Prometheus Operator CRDs.
+  enabled: false
+  interval: 30s
+  labels: {}

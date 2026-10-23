@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN">
+  <Appenders>
+    <Console name="STDOUT" target="SYSTEM_OUT">
+      <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5p [%t] %c{1} - %m %X%n"/>
+    </Console>
+  </Appenders>
+  <Loggers>
+    <Logger name="cz.company.guardian" level="info"/>
+    <Logger name="org.apache.kafka" level="warn"/>
+    <Logger name="kafka" level="warn"/>
+    <Logger name="state.change.logger" level="warn"/>
+    <Logger name="io.kroxylicious" level="warn"/>
+    <Root level="warn">
+      <AppenderRef ref="STDOUT"/>
+    </Root>
+  </Loggers>
+</Configuration>

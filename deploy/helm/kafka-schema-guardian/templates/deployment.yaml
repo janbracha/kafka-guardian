@@ -1,0 +1,200 @@
+{{- $nodes := include "ksg.nodePorts" . | fromJsonArray }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ksg.fullname" . }}
+  labels:
+    {{- include "ksg.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: {{ .Values.rollingUpdate.maxSurge }}
+      maxUnavailable: {{ .Values.rollingUpdate.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "ksg.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Any change of the proxy configuration or the whitelist changes the pod template and rolls the Deployment.
+        checksum/proxy-config: {{ include (print $.Template.BasePath "/configmap-config.yaml") . | sha256sum }}
+        checksum/rules: {{ include (print $.Template.BasePath "/configmap-rules.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "ksg.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/part-of: kafka-schema-guardian
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "ksg.fullname" . }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.topologySpreadConstraints.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "ksg.selectorLabels" . | nindent 14 }}
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "ksg.selectorLabels" . | nindent 14 }}
+      {{- end }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    {{- include "ksg.selectorLabels" . | nindent 20 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: proxy
+          image: {{ include "ksg.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --config
+            - /etc/kafka-schema-guardian/config/proxy-config.yaml
+          env:
+            - name: KROXYLICIOUS_LOG_FORMAT
+              value: {{ .Values.proxy.logFormat | quote }}
+            - name: KROXYLICIOUS_APP_LOG_LEVEL
+              value: {{ .Values.proxy.logLevel | quote }}
+            - name: JAVA_MAX_MEM_RATIO
+              value: {{ .Values.proxy.javaMaxMemRatio | quote }}
+            - name: JAVA_OPTIONS
+              value: -XX:+ExitOnOutOfMemoryError
+            {{- with .Values.proxy.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: kafka-bootstrap
+              containerPort: {{ int .Values.proxy.bootstrapPort }}
+            {{- range $nodes }}
+            - name: node-{{ .id | int }}
+              containerPort: {{ .port | int }}
+            {{- end }}
+            - name: management
+              containerPort: 9190
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: management
+            periodSeconds: 2
+            failureThreshold: 30
+          # The Kafka ports open only after the rules were loaded and validated.
+          readinessProbe:
+            tcpSocket:
+              port: kafka-bootstrap
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: management
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep {{ int .Values.preStopSleepSeconds }}"]
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: proxy-config
+              mountPath: /etc/kafka-schema-guardian/config
+              readOnly: true
+            - name: rules
+              mountPath: /etc/kafka-schema-guardian/rules
+              readOnly: true
+            {{- if ne .Values.mode "plaintext" }}
+            - name: tls-server
+              mountPath: /etc/kafka-schema-guardian/tls/server
+              readOnly: true
+            {{- end }}
+            {{- if eq .Values.mode "mtls" }}
+            - name: tls-client-ca
+              mountPath: /etc/kafka-schema-guardian/tls/client-ca
+              readOnly: true
+            {{- end }}
+            {{- if .Values.kafka.tls.enabled }}
+            - name: tls-upstream-ca
+              mountPath: /etc/kafka-schema-guardian/tls/upstream-ca
+              readOnly: true
+            {{- if .Values.kafka.tls.clientCertSecret }}
+            - name: tls-upstream-client
+              mountPath: /etc/kafka-schema-guardian/tls/upstream-client
+              readOnly: true
+            {{- end }}
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
+        - name: proxy-config
+          configMap:
+            name: {{ include "ksg.fullname" . }}-config
+        - name: rules
+          configMap:
+            name: {{ include "ksg.fullname" . }}-rules
+        {{- if ne .Values.mode "plaintext" }}
+        - name: tls-server
+          secret:
+            secretName: {{ .Values.proxy.tls.serverSecret }}
+            defaultMode: 0440
+        {{- end }}
+        {{- if eq .Values.mode "mtls" }}
+        - name: tls-client-ca
+          secret:
+            secretName: {{ .Values.proxy.tls.clientCaSecret }}
+            defaultMode: 0440
+        {{- end }}
+        {{- if .Values.kafka.tls.enabled }}
+        - name: tls-upstream-ca
+          secret:
+            secretName: {{ .Values.kafka.tls.caSecret }}
+            defaultMode: 0440
+        {{- if .Values.kafka.tls.clientCertSecret }}
+        - name: tls-upstream-client
+          secret:
+            secretName: {{ .Values.kafka.tls.clientCertSecret }}
+            defaultMode: 0440
+        {{- end }}
+        {{- end }}

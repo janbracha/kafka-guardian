@@ -1,0 +1,33 @@
+# Local playground only: PLAINTEXT in both directions. Never use this on a shared network.
+management:
+  bindAddress: 0.0.0.0
+  port: 9190
+  endpoints:
+    prometheus: {}
+
+clusterDefinitions:
+  - name: local-kafka
+    bootstrapServers: kafka:9092
+
+filterDefinitions:
+  - name: schema-guardian
+    type: SchemaGuardian
+    config:
+      rulesFile: /etc/kafka-schema-guardian/rules/rules.yaml
+
+defaultFilters:
+  - schema-guardian
+
+virtualClusters:
+  - name: guardian
+    target:
+      cluster: local-kafka
+    gateways:
+      - name: plaintext
+        portIdentifiesNode:
+          bootstrapAddress: localhost:9192
+          nodeStartPort: 9193
+          nodeIdRanges:
+            - name: broker
+              start: 1
+              end: 1

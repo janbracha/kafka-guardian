@@ -1,0 +1,56 @@
+# Proxy configuration with PLAINTEXT producers. Anyone who can reach the Service can produce: use only inside a trusted
+# network (and keep the NetworkPolicy). The connection from the proxy to Strimzi stays TLS/mTLS.
+management:
+  bindAddress: 0.0.0.0
+  port: 9190
+  endpoints:
+    prometheus: {}
+
+network:
+  proxy:
+    shutdownQuietPeriod: 2s
+    shutdownTimeout: 15s
+  management:
+    shutdownQuietPeriod: 1s
+
+clusterDefinitions:
+  - name: strimzi
+    bootstrapServers: my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9093
+    tls:
+      trust:
+        storeFile: /etc/kafka-schema-guardian/tls/upstream-ca/ca.crt
+        storeType: PEM
+      key:
+        privateKeyFile: /etc/kafka-schema-guardian/tls/upstream-client/tls.key
+        certificateFile: /etc/kafka-schema-guardian/tls/upstream-client/tls.crt
+
+filterDefinitions:
+  - name: schema-guardian
+    type: SchemaGuardian
+    config:
+      rulesFile: /etc/kafka-schema-guardian/rules/rules.yaml
+  - name: connection-expiration
+    type: ConnectionExpiration
+    config:
+      maxAge: 30m
+      jitter: 5m
+
+defaultFilters:
+  - schema-guardian
+  - connection-expiration
+
+virtualClusters:
+  - name: guardian
+    target:
+      cluster: strimzi
+    drainTimeout: 10s
+    gateways:
+      - name: plaintext
+        portIdentifiesNode:
+          bootstrapAddress: kafka-schema-guardian-bootstrap.kafka-proxy.svc.cluster.local:9092
+          advertisedBrokerAddressPattern: kafka-schema-guardian-bootstrap.kafka-proxy.svc.cluster.local
+          nodeStartPort: 9093
+          nodeIdRanges:
+            - name: brokers
+              start: 0
+              end: 2
