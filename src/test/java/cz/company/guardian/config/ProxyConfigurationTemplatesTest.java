@@ -19,7 +19,7 @@ class ProxyConfigurationTemplatesTest {
 
     static Stream<Path> proxyConfigs() {
         return Stream.of(
-                Path.of("deploy/proxy-config.yaml"),
+                Path.of("deploy/base/proxy-config.yaml"),
                 Path.of("deploy/overlays/tls/proxy-config.yaml"),
                 Path.of("deploy/overlays/plaintext/proxy-config.yaml"),
                 Path.of("examples/local/proxy-config.yaml"));
@@ -42,7 +42,7 @@ class ProxyConfigurationTemplatesTest {
 
     @Test
     void shippedRulesAreValid() {
-        GuardianRules rules = RulesLoader.load(Path.of("deploy/rules.yaml"));
+        GuardianRules rules = RulesLoader.load(Path.of("deploy/base/rules.yaml"));
 
         assertThat(rules.whitelist().describe()).containsOnlyKeys("TEST", "TEST2");
         assertThat(RulesLoader.load(Path.of("docker/rules.yaml")).whitelist().topicCount()).isPositive();
@@ -51,8 +51,8 @@ class ProxyConfigurationTemplatesTest {
 
     @Test
     void servicePortsMatchTheGatewayPorts() throws IOException {
-        String service = Files.readString(Path.of("deploy/service.yaml"));
-        String deployment = Files.readString(Path.of("deploy/deployment.yaml"));
+        String service = Files.readString(Path.of("deploy/base/service.yaml"));
+        String deployment = Files.readString(Path.of("deploy/base/deployment.yaml"));
 
         for (int port : new int[]{ 9092, 9093, 9094, 9095, 9190 }) {
             assertThat(service).contains("port: " + port);

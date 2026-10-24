@@ -1,30 +1,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: kafka-proxy
-
+# Default variant (mTLS towards producers). Other variants: overlays/tls, overlays/plaintext. Optional parts: optional/.
 resources:
-  - namespace.yaml
-  - serviceaccount.yaml
-  - service.yaml
-  - deployment.yaml
-  - poddisruptionbudget.yaml
-  - networkpolicy.yaml
-
-# Generated ConfigMaps get a content hash in their name. Editing rules.yaml or proxy-config.yaml therefore changes the
-# Deployment's pod template and triggers a RollingUpdate: the "checksum annotation" pattern, built in.
-configMapGenerator:
-  - name: kafka-schema-guardian-rules
-    files:
-      - rules.yaml
-  - name: kafka-schema-guardian-config
-    files:
-      - proxy-config.yaml
-
-# make deploy overrides this with IMAGE_REGISTRY/IMAGE_REPOSITORY:IMAGE_TAG (kustomize edit set image).
-images:
-  - name: registry.example.com/platform/kafka-schema-guardian
-    newTag: 1.0.0
-
-# Not applied by default (need CRDs or are a matter of taste): see optional/, applied with  make deploy-optional
-# Secrets are never part of this kustomization; create them as described in secret-example.yaml.
+  - base

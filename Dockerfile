@@ -34,7 +34,7 @@ COPY --from=build --chown=0:0 --chmod=0444 /build/kafka-schema-guardian.jar /opt
 
 # Secure defaults: mTLS towards producers and Strimzi, deny-all rules. They need the Secrets described in the README, so
 # without them the proxy refuses to start. Kubernetes mounts the real files over these paths.
-COPY --chown=0:0 --chmod=0444 deploy/proxy-config.yaml /etc/kafka-schema-guardian/config/proxy-config.yaml
+COPY --chown=0:0 --chmod=0444 deploy/base/proxy-config.yaml /etc/kafka-schema-guardian/config/proxy-config.yaml
 COPY --chown=0:0 --chmod=0444 docker/rules.yaml /etc/kafka-schema-guardian/rules/rules.yaml
 
 EXPOSE 9092 9093 9094 9095 9190

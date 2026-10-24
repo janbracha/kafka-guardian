@@ -389,16 +389,16 @@ curl -s localhost:9190/metrics | grep kafka_schema_guardian
 ## 11. Kubernetes: Kustomize a Helm
 
 Namespace `kafka-proxy` (guardian), Strimzi v namespace `kafka` (cluster `my-cluster`). Hodnoty upravte v
-[`deploy/proxy-config.yaml`](deploy/proxy-config.yaml) nebo v `values.yaml`.
+[`deploy/base/proxy-config.yaml`](deploy/base/proxy-config.yaml) nebo v `values.yaml`.
 
 | Soubor | Obsah |
 |---|---|
-| [`deploy/namespace.yaml`](deploy/namespace.yaml) | Namespace (Pod Security `restricted`) |
-| [`deploy/rules.yaml`](deploy/rules.yaml) | whitelist; Kustomize z nÄ›j generuje ConfigMap `kafka-schema-guardian-rules` |
-| [`deploy/proxy-config.yaml`](deploy/proxy-config.yaml) | konfigurace proxy -> ConfigMap `kafka-schema-guardian-config` (vĂ˝chozĂ­ mTLS) |
-| [`deploy/deployment.yaml`](deploy/deployment.yaml) | 3 repliky, RollingUpdate, probes, resources, securityContext, topologySpread, anti-affinity |
-| [`deploy/service.yaml`](deploy/service.yaml) | `kafka-schema-guardian-bootstrap` (Kafka porty) a `kafka-schema-guardian-management` (health, metriky) |
-| [`deploy/poddisruptionbudget.yaml`](deploy/poddisruptionbudget.yaml), [`deploy/networkpolicy.yaml`](deploy/networkpolicy.yaml) | PDB (`maxUnavailable: 1`), NetworkPolicy |
+| [`deploy/base/namespace.yaml`](deploy/base/namespace.yaml) | Namespace (Pod Security `restricted`) |
+| [`deploy/base/rules.yaml`](deploy/base/rules.yaml) | whitelist; Kustomize z nÄ›j generuje ConfigMap `kafka-schema-guardian-rules` |
+| [`deploy/base/proxy-config.yaml`](deploy/base/proxy-config.yaml) | konfigurace proxy -> ConfigMap `kafka-schema-guardian-config` (vĂ˝chozĂ­ mTLS) |
+| [`deploy/base/deployment.yaml`](deploy/base/deployment.yaml) | 3 repliky, RollingUpdate, probes, resources, securityContext, topologySpread, anti-affinity |
+| [`deploy/base/service.yaml`](deploy/base/service.yaml) | `kafka-schema-guardian-bootstrap` (Kafka porty) a `kafka-schema-guardian-management` (health, metriky) |
+| [`deploy/base/poddisruptionbudget.yaml`](deploy/base/poddisruptionbudget.yaml), [`deploy/base/networkpolicy.yaml`](deploy/base/networkpolicy.yaml) | PDB (`maxUnavailable: 1`), NetworkPolicy |
 | [`deploy/secret-example.yaml`](deploy/secret-example.yaml) | **jen placeholdery** ÄŤtyĹ™ SecretĹŻ, do kustomization nepatĹ™Ă­ |
 | [`deploy/optional/`](deploy/optional) | `servicemonitor.yaml` (Prometheus Operator), `hpa.yaml` |
 | [`deploy/overlays/tls`](deploy/overlays/tls), [`deploy/overlays/plaintext`](deploy/overlays/plaintext) | varianty konfigurace proxy |
@@ -407,7 +407,7 @@ Namespace `kafka-proxy` (guardian), Strimzi v namespace `kafka` (cluster `my-clu
 ### Kustomize
 
 ```bash
-kubectl apply -f deploy/namespace.yaml
+kubectl apply -f deploy/base/namespace.yaml
 # vytvoĹ™te Secrety (viz deploy/secret-example.yaml a kapitolu 13), pak:
 make deploy IMAGE_REGISTRY=registry.example.com IMAGE_REPOSITORY=platform/kafka-schema-guardian IMAGE_TAG=1.0.0
 make deploy KUSTOMIZE_DIR=deploy/overlays/tls        # varianta TLS
@@ -566,7 +566,7 @@ a obmÄ›Ĺujte je s dostateÄŤnĂ˝m pĹ™edstihem pĹ™ed expiracĂ­; r
 
 ## 14. ZmÄ›na whitelistu, rollback
 
-1. Upravte `deploy/rules.yaml` (nebo `rules.topics` v Helm values). Validace probÄ›hne pĹ™i startu kaĹľdĂ©ho podu.
+1. Upravte `deploy/base/rules.yaml` (nebo `rules.topics` v Helm values). Validace probÄ›hne pĹ™i startu kaĹľdĂ©ho podu.
 2. Aplikujte (`make deploy` / `helm upgrade`). NovĂ˝ ConfigMap mĂˇ jinĂ˝ hash, Deployment se rozjede rolling updatem
    (`maxUnavailable: 0`, `maxSurge: 1`): novĂ˝ pod musĂ­ projĂ­t readiness (pravidla naÄŤtena a validnĂ­), teprve pak se
    ukonÄŤĂ­ starĂ˝. **NeplatnĂ© pravidla tedy rollout zastavĂ­ a bÄ›ĹľĂ­cĂ­ repliky zĹŻstanou na starĂ˝ch pravidlech.**

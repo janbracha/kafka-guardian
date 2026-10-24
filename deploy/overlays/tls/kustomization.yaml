@@ -3,7 +3,7 @@ kind: Kustomization
 
 # kubectl apply -k deploy/overlays/tls
 resources:
-  - ../..
+  - ../../base
 
 configMapGenerator:
   - name: kafka-schema-guardian-config
