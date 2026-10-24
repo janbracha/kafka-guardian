@@ -30,7 +30,13 @@ RUN --mount=type=cache,target=/root/.m2 \
 FROM ${PROXY_IMAGE} AS runtime
 ARG PROXY_IMAGE
 
-# The proxy image already runs as the non-root user 185; stated again so it can never silently change.
+# The upstream image is rebuilt rarely, so OS packages (curl, expat, pcre2, ca-certificates, ...) can be behind their
+# security fixes. Updating them here is what makes the Trivy gate pass; it needs root, the final user is set below.
+USER 0
+RUN microdnf -y --setopt=install_weak_deps=0 --setopt=tsflags=nodocs update \
+    && microdnf clean all
+
+# The proxy image runs as the non-root user 185; stated again so it can never silently change.
 USER 185
 
 # Plugins on the proxy classpath: everything in /opt/kroxylicious/libs.
