@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1200 340" width="1200" height="340" role="img" aria-label="kafka-schema-guardian">
+<title>kafka-schema-guardian</title>
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b1b4d"/><stop offset="1" stop-color="#1e3a8a"/></linearGradient></defs>
+<rect width="1200" height="340" rx="24" fill="url(#bg)"/>
+<g transform="translate(40,10) scale(0.66)">
+<defs>
+  <linearGradient id="shield" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#3b82f6"/>
+    <stop offset="1" stop-color="#1e3a8a"/>
+  </linearGradient>
+  <linearGradient id="wing" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#ffffff"/>
+    <stop offset="1" stop-color="#bfdbfe"/>
+  </linearGradient>
+  <linearGradient id="halo" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#fbbf24"/>
+    <stop offset="0.5" stop-color="#fde68a"/>
+    <stop offset="1" stop-color="#f59e0b"/>
+  </linearGradient>
+  <g id="w">
+    <path d="M118 128 C70 118 34 90 14 48 C58 50 94 72 118 104 Z" fill="url(#wing)" stroke="#93c5fd" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M118 172 C62 168 22 138 2 92 C52 96 94 118 118 150 Z" fill="url(#wing)" stroke="#93c5fd" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M118 216 C64 218 24 192 6 146 C54 150 94 170 118 198 Z" fill="url(#wing)" stroke="#93c5fd" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M118 258 C72 266 36 246 20 204 C60 206 94 222 118 244 Z" fill="url(#wing)" stroke="#93c5fd" stroke-width="3" stroke-linejoin="round"/>
+  </g>
+</defs>
+<use href="#w"/>
+<use href="#w" transform="translate(512,0) scale(-1,1)"/>
+<path d="M256 74 L402 124 V252 C402 344 342 412 256 450 C170 412 110 344 110 252 V124 Z" fill="url(#shield)" stroke="#dbeafe" stroke-width="8" stroke-linejoin="round"/>
+<path d="M256 98 L384 141 V252 C384 330 332 390 256 424 C180 390 128 330 128 252 V141 Z" fill="none" stroke="#93c5fd" stroke-opacity="0.55" stroke-width="3"/>
+<ellipse cx="256" cy="52" rx="56" ry="15" fill="none" stroke="url(#halo)" stroke-width="10"/>
+<circle cx="256" cy="226" r="62" fill="#0f2a6b" fill-opacity="0.55" stroke="#ffffff" stroke-width="7"/>
+<path d="M224 228 L246 252 L292 200" fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+<g>
+  <rect x="185" y="332" width="22" height="26" rx="5" fill="#fbbf24"/>
+  <rect x="215" y="332" width="22" height="26" rx="5" fill="#ffffff" fill-opacity="0.9"/>
+  <rect x="245" y="332" width="22" height="26" rx="5" fill="#ffffff" fill-opacity="0.9"/>
+  <rect x="275" y="332" width="22" height="26" rx="5" fill="#ffffff" fill-opacity="0.9"/>
+  <rect x="305" y="332" width="22" height="26" rx="5" fill="#ffffff" fill-opacity="0.9"/>
+</g>
+</g>
+<text x="430" y="150" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="64" font-weight="700" fill="#ffffff">kafka-schema-guardian</text>
+<text x="432" y="205" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="30" fill="#bfdbfe">Only whitelisted schemas reach your Kafka.</text>
+<text x="432" y="258" font-family="Consolas, Menlo, monospace" font-size="24" fill="#fbbf24">0x00 | schema id | payload  -&gt;  allow or INVALID_RECORD</text>
+</svg>

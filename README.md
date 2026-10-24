@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/banner.svg" alt="kafka-schema-guardian: only whitelisted schemas reach your Kafka" width="100%">
+</p>
+
 # kafka-schema-guardian
 
 Kroxylicious filtr (Java 21), kterĂ˝ kontroluje **kaĹľdĂ˝ Kafka `ProduceRequest`** dĹ™Ă­v, neĹľ se dostane k brokeru.
