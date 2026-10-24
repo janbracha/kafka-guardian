@@ -130,7 +130,14 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build the image (this runs the unit tests again inside the Dockerfile)
-        run: make image IMAGE_REGISTRY=local IMAGE_REPOSITORY=kafka-schema-guardian IMAGE_TAG=${{ steps.meta.outputs.tag }}
+        run: |
+          set -o pipefail
+          make image IMAGE_REGISTRY=local IMAGE_REPOSITORY=kafka-schema-guardian IMAGE_TAG=${{ steps.meta.outputs.tag }} 2>&1 | tee /tmp/image-build.log
+      - name: Show the end of the image build log as an annotation
+        if: failure()
+        run: |
+          msg=$(tail -n 40 /tmp/image-build.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=image build::${msg}"
 
       # The official Trivy image is pinned to a version; no third-party action is involved.
       - name: Vulnerability scan (fails on fixable HIGH/CRITICAL findings)

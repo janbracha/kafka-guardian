@@ -17,7 +17,10 @@ WORKDIR /build
 COPY pom.xml ./
 COPY .mvn .mvn
 COPY src src
-# Unit tests and the static checks run here; the integration tests run in CI (they need a broker and take minutes).
+# The configuration tests parse the shipped YAML files.
+COPY deploy deploy
+COPY docker docker
+COPY examples examples# Unit tests and the static checks run here; the integration tests run in CI (they need a broker and take minutes).
 RUN --mount=type=cache,target=/root/.m2 \
     mvn -B -ntp -DskipITs verify \
     && cp target/kafka-schema-guardian-*.jar /build/kafka-schema-guardian.jar
