@@ -132,14 +132,12 @@ jobs:
       - name: Build the image (this runs the unit tests again inside the Dockerfile)
         run: make image IMAGE_REGISTRY=local IMAGE_REPOSITORY=kafka-schema-guardian IMAGE_TAG=${{ steps.meta.outputs.tag }}
 
+      # The official Trivy image is pinned to a version; no third-party action is involved.
       - name: Vulnerability scan (fails on fixable HIGH/CRITICAL findings)
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: local/kafka-schema-guardian:${{ steps.meta.outputs.tag }}
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
-          format: table
+        run: >
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.76.1
+          image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+          local/kafka-schema-guardian:${{ steps.meta.outputs.tag }}
 
       - name: SBOM of the image (SPDX)
         uses: anchore/sbom-action@v0
