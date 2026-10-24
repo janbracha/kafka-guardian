@@ -22,6 +22,7 @@ import static cz.company.guardian.it.ItSupport.TIMEOUT;
 import static cz.company.guardian.it.ItSupport.assertRejectedAsInvalidRecord;
 import static cz.company.guardian.it.ItSupport.frame;
 import static cz.company.guardian.it.ItSupport.proxyWithGuardian;
+import static cz.company.guardian.it.ItSupport.proxyWithGuardianOnFixedPort;
 import static cz.company.guardian.it.ItSupport.storedSchemaIds;
 import static cz.company.guardian.it.ItSupport.writeRules;
 import static io.kroxylicious.testing.integration.tester.KroxyliciousTesters.kroxyliciousTester;
@@ -39,7 +40,7 @@ class SchemaGuardianResilienceIT {
     void behaviourIsIdenticalAfterTheProxyRestarts(Topic topic, @TempDir Path dir) throws Exception {
         Path rules = writeRules(dir, Map.of(topic.name(), new int[]{ 1, 2 }));
 
-        try (var tester = kroxyliciousTester(proxyWithGuardian(cluster, rules))) {
+        try (var tester = kroxyliciousTester(proxyWithGuardianOnFixedPort(cluster.getBootstrapServers(), rules))) {
             try (var producer = tester.producer(Serdes.String(), Serdes.ByteArray(), Map.of())) {
                 producer.send(new ProducerRecord<>(topic.name(), "k", frame(1, "before"))).get(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
                 assertRejectedAsInvalidRecord(producer.send(new ProducerRecord<>(topic.name(), "k", frame(9, "no"))));
