@@ -1,0 +1,15 @@
+# Findings in the upstream Kroxylicious proxy image that have no fixed image yet (0.25.1 is the latest release).
+# Every entry expires, so the pipeline fails again and forces a re-evaluation; remove an entry as soon as a proxy image
+# with the fixed library exists. New findings are never ignored.
+vulnerabilities:
+  - id: CVE-2026-106451
+    expired_at: 2026-11-30
+    statement: >
+      lz4-java 1.11.2, bundled by Kroxylicious. Insecure temporary file handling needs write access to the process's
+      temp directory; the pod has a read-only root filesystem and a private emptyDir /tmp, and the proxy loads
+      its native LZ4 library from java.library.path. Fixed in lz4-java 1.11.4.
+  - id: CVE-2026-63126
+    expired_at: 2026-11-30
+    statement: >
+      wire-runtime 6.4.0, bundled by Kroxylicious for the schema-validation filters, which this deployment does
+      not configure (only SchemaGuardian and ConnectionExpiration are). Fixed in wire-runtime 6.4.5.

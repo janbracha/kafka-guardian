@@ -647,6 +647,8 @@ mimo pull requesty a jen po úspěchu všech předchozích kroků; PR nepotřebu
 | push do `main` nebo `master` | `1.0.0-g<commit>` (neměnný; pro chart validní SemVer pre-release) |
 | tag `v1.0.0` | totéž a navíc `1.0.0` (tag se musí rovnat verzi v `pom.xml`, jinak pipeline selže) |
 
+Trivy sken ignoruje jen dva nálezy ve vestavěných knihovnách upstream image Kroxylicious 0.25.1 (`lz4-java` CVE-2026-106451, `wire-runtime` CVE-2026-63126), pro které zatím neexistuje opravený image. Výjimky jsou v `.trivyignore.yaml` s odůvodněním a **platností do 2026-11-30**; po vypršení pipeline znovu selže. Nové nálezy se neignorují.
+
 Image se nikdy netaguje `latest`. Chart i image mají stejnou verzi, chart ukazuje na image se svou `appVersion`.
 
 ### Nastavení repozitáře (GitHub -> Settings -> Secrets and variables -> Actions)
