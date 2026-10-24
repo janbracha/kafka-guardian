@@ -4,71 +4,71 @@
 
 # kafka-schema-guardian
 
-Kroxylicious filtr (Java 21), kterĂ˝ kontroluje **kaĹľdĂ˝ Kafka `ProduceRequest`** dĹ™Ă­v, neĹľ se dostane k brokeru.
-Z kaĹľdĂ©ho recordu ÄŤte jen topic, dĂ©lku hodnoty, *magic byte* a *schema ID* podle Confluent wire formĂˇtu. Cokoli,
-co nenĂ­ explicitnÄ› povoleno v whitelistu `topic -> povolenĂˇ schema ID`, se odmĂ­tne pĹ™Ă­mo v proxy a **broker o tom
-poĹľadavku nikdy neuslyĹˇĂ­**.
+Kroxylicious filtr (Java 21), který kontroluje **každý Kafka `ProduceRequest`** dřív, než se dostane k brokeru.
+Z každého recordu čte jen topic, délku hodnoty, *magic byte* a *schema ID* podle Confluent wire formátu. Cokoli,
+co není explicitně povoleno v whitelistu `topic -> povolená schema ID`, se odmítne přímo v proxy a **broker o tom
+požadavku nikdy neuslyší**.
 
-* Ĺ˝ĂˇdnĂˇ deserializace Avro/Protobuf/JSON, ĹľĂˇdnĂ˝ Schema Registry lookup, ĹľĂˇdnĂ© kopĂ­rovĂˇnĂ­ ani logovĂˇnĂ­ payloadu.
-* VĂ˝chozĂ­ politika `DENY`, fail-closed: chyba konfigurace, vĂ˝jimka pĹ™i validaci nebo neoÄŤekĂˇvanĂˇ struktura poĹľadavku
-  nikdy neznamenĂˇ propuĹˇtÄ›nĂ­ zprĂˇvy.
-* SamostatnĂ˝, bezstavovĂ˝ Kubernetes Deployment pĹ™ed existujĂ­cĂ­m Strimzi clusterem (ne sidecar).
+* Žádná deserializace Avro/Protobuf/JSON, žádný Schema Registry lookup, žádné kopírování ani logování payloadu.
+* Výchozí politika `DENY`, fail-closed: chyba konfigurace, výjimka při validaci nebo neočekávaná struktura požadavku
+  nikdy neznamená propuštění zprávy.
+* Samostatný, bezstavový Kubernetes Deployment před existujícím Strimzi clusterem (ne sidecar).
 
 ## Obsah
 
 1. [Verze a kompatibilita](#1-verze-a-kompatibilita)
-2. [Architektura a datovĂ˝ tok](#2-architektura-a-datovĂ˝-tok)
-3. [ValidaÄŤnĂ­ algoritmus](#3-validaÄŤnĂ­-algoritmus)
-4. [ChovĂˇnĂ­ vĹŻÄŤi producerĹŻm](#4-chovĂˇnĂ­-vĹŻÄŤi-producerĹŻm)
+2. [Architektura a datový tok](#2-architektura-a-datový-tok)
+3. [Validační algoritmus](#3-validační-algoritmus)
+4. [Chování vůči producerům](#4-chování-vůči-producerům)
 5. [Konfigurace a whitelist](#5-konfigurace-a-whitelist)
-6. [VĂ˝kon](#6-vĂ˝kon)
-7. [LogovĂˇnĂ­ a metriky](#7-logovĂˇnĂ­-a-metriky)
+6. [Výkon](#6-výkon)
+7. [Logování a metriky](#7-logování-a-metriky)
 8. [Build a testy](#8-build-a-testy)
 9. [Docker image](#9-docker-image)
-10. [LokĂˇlnĂ­ testovĂˇnĂ­](#10-lokĂˇlnĂ­-testovĂˇnĂ­)
+10. [Lokální testování](#10-lokální-testování)
 11. [Kubernetes: Kustomize a Helm](#11-kubernetes-kustomize-a-helm)
-12. [SĂ­tÄ›, Kafka metadata a Strimzi](#12-sĂ­tÄ›-kafka-metadata-a-strimzi)
+12. [Sítě, Kafka metadata a Strimzi](#12-sítě-kafka-metadata-a-strimzi)
 13. [PLAINTEXT, TLS a mTLS](#13-plaintext-tls-a-mtls)
-14. [ZmÄ›na whitelistu, rollback](#14-zmÄ›na-whitelistu-rollback)
-15. [Dostupnost, ĹˇkĂˇlovĂˇnĂ­, nastavenĂ­ producerĹŻ](#15-dostupnost-ĹˇkĂˇlovĂˇnĂ­-nastavenĂ­-producerĹŻ)
+14. [Změna whitelistu, rollback](#14-změna-whitelistu-rollback)
+15. [Dostupnost, škálování, nastavení producerů](#15-dostupnost-škálování-nastavení-producerů)
 16. [CI/CD](#16-cicd)
 17. [Troubleshooting](#17-troubleshooting)
-18. [BezpeÄŤnostnĂ­ omezenĂ­ a znĂˇmĂ© limitace](#18-bezpeÄŤnostnĂ­-omezenĂ­-a-znĂˇmĂ©-limitace)
+18. [Bezpečnostní omezení a známé limitace](#18-bezpečnostní-omezení-a-známé-limitace)
 
 ---
 
 ## 1. Verze a kompatibilita
 
-| SouÄŤĂˇst | Verze | PoznĂˇmka |
+| Součást | Verze | Poznámka |
 |---|---|---|
-| Kroxylicious | **0.25.1** (vydĂˇno 2026-10-20) | nejnovÄ›jĹˇĂ­ stabilnĂ­ verze v Maven Central; API ovÄ›Ĺ™eno proti `kroxylicious-api-0.25.1` |
-| Java | **21** | od Kroxylicious 0.22 je Java 21 minimum; testovĂˇno i na Java 25 upstreamem |
-| Kafka message API | **4.3.x** | od 0.24 jsou tĹ™Ă­dy `*Data` vendorovanĂ© do `io.kroxylicious.kafka.*`; `kafka.message-spec.version` Kroxylicious 0.25.1 je 4.3.0 |
-| Kafka klienti v testech | 4.3.1 | stejnĂˇ verze jako v Kroxylicious parent POM |
-| Proxy image | `quay.io/kroxylicious/proxy:0.25.1` | pinnuto i digestem, viz [Dockerfile](Dockerfile) (`quay.io/kroxylicious/kroxylicious` je od 0.24 zruĹˇenĂ˝) |
-| Strimzi | libovolnĂˇ | proxy se pĹ™ipojuje jako bÄ›ĹľnĂ˝ Kafka klient na TLS listener; fragmenty Strimzi CR v README jsou ilustrativnĂ­ |
+| Kroxylicious | **0.25.1** (vydáno 2026-10-20) | nejnovější stabilní verze v Maven Central; API ověřeno proti `kroxylicious-api-0.25.1` |
+| Java | **21** | od Kroxylicious 0.22 je Java 21 minimum; testováno i na Java 25 upstreamem |
+| Kafka message API | **4.3.x** | od 0.24 jsou třídy `*Data` vendorované do `io.kroxylicious.kafka.*`; `kafka.message-spec.version` Kroxylicious 0.25.1 je 4.3.0 |
+| Kafka klienti v testech | 4.3.1 | stejná verze jako v Kroxylicious parent POM |
+| Proxy image | `quay.io/kroxylicious/proxy:0.25.1` | pinnuto i digestem, viz [Dockerfile](Dockerfile) (`quay.io/kroxylicious/kroxylicious` je od 0.24 zrušený) |
+| Strimzi | libovolná | proxy se připojuje jako běžný Kafka klient na TLS listener; fragmenty Strimzi CR v README jsou ilustrativní |
 
 ### Pravidla kompatibility pluginu
 
-1. **Plugin se kompiluje proti pĹ™esnĂ© verzi Kroxylicious a musĂ­ bÄ›Ĺľet na stejnĂ© verzi.** `kroxylicious.version`
-   v [pom.xml](pom.xml) a tag `PROXY_IMAGE` v [Dockerfile](Dockerfile) se mÄ›nĂ­ vĹľdy spoleÄŤnÄ›.
-2. Filter API se mezi minor verzemi lĂˇme (0.24: pĹ™echod na `io.kroxylicious.kafka.*`, `errorResponse(..., Errors)`
-   mĂ­sto vĂ˝jimek; 0.22: ĹľivotnĂ­ cyklus `FilterFactory` per virtual cluster). Aktualizace = zmÄ›na verze, kompilace,
-   unit testy a integraÄŤnĂ­ testy, teprve pak novĂ˝ image.
-3. Plugin pouĹľĂ­vĂˇ z balĂ­ku `io.kroxylicious.kafka.common.record.internal` tĹ™Ă­dy `MemoryRecords`, `Record`,
-   `RecordBatch`. Upstream tento balĂ­k oznaÄŤuje jako **nepodporovanĂ© API** (mĹŻĹľe se zmÄ›nit i v patch verzi). Je to ale
-   jedinĂˇ cesta k dekomprimovanĂ˝m recordĹŻm a pouĹľĂ­vajĂ­ ji i vestavÄ›nĂ© filtry Kroxylicious (record validation, encryption).
+1. **Plugin se kompiluje proti přesné verzi Kroxylicious a musí běžet na stejné verzi.** `kroxylicious.version`
+   v [pom.xml](pom.xml) a tag `PROXY_IMAGE` v [Dockerfile](Dockerfile) se mění vždy společně.
+2. Filter API se mezi minor verzemi láme (0.24: přechod na `io.kroxylicious.kafka.*`, `errorResponse(..., Errors)`
+   místo výjimek; 0.22: životní cyklus `FilterFactory` per virtual cluster). Aktualizace = změna verze, kompilace,
+   unit testy a integrační testy, teprve pak nový image.
+3. Plugin používá z balíku `io.kroxylicious.kafka.common.record.internal` třídy `MemoryRecords`, `Record`,
+   `RecordBatch`. Upstream tento balík označuje jako **nepodporované API** (může se změnit i v patch verzi). Je to ale
+   jediná cesta k dekomprimovaným recordům a používají ji i vestavěné filtry Kroxylicious (record validation, encryption).
    Proto pravidlo 1.
-4. VĹˇechny zĂˇvislosti pluginu majĂ­ scope `provided`; JAR obsahuje jen vlastnĂ­ tĹ™Ă­dy (`jackson`, `micrometer`, `slf4j`
-   dodĂˇvĂˇ proxy). Plugin se objevĂ­ pĹ™es `ServiceLoader`:
+4. Všechny závislosti pluginu mají scope `provided`; JAR obsahuje jen vlastní třídy (`jackson`, `micrometer`, `slf4j`
+   dodává proxy). Plugin se objeví přes `ServiceLoader`:
    [`META-INF/services/io.kroxylicious.proxy.filter.FilterFactory`](src/main/resources/META-INF/services/io.kroxylicious.proxy.filter.FilterFactory)
-   obsahuje `cz.company.guardian.SchemaGuardian`; v konfiguraci se pouĹľĂ­vĂˇ jako `type: SchemaGuardian`.
-5. Instance `FilterFactory` je od 0.22 vytvĂˇĹ™ena **pro kaĹľdĂ˝ virtual cluster zvlĂˇĹˇĹĄ**; whitelist se proto naÄŤĂ­tĂˇ
-   per virtual cluster a metriky jsou sdĂ­lenĂ© pĹ™es globĂˇlnĂ­ Micrometer registry proxy.
+   obsahuje `cz.company.guardian.SchemaGuardian`; v konfiguraci se používá jako `type: SchemaGuardian`.
+5. Instance `FilterFactory` je od 0.22 vytvářena **pro každý virtual cluster zvlášť**; whitelist se proto načítá
+   per virtual cluster a metriky jsou sdílené přes globální Micrometer registry proxy.
 
 ---
 
-## 2. Architektura a datovĂ˝ tok
+## 2. Architektura a datový tok
 
 ```mermaid
 flowchart LR
@@ -80,11 +80,11 @@ flowchart LR
         K[Kroxylicious proxy] --> F[SchemaGuardian filtr]
     end
 
-    F -->|vĹˇe povoleno: ProduceRequest se pĹ™epoĹˇle| B[Strimzi Kafka bootstrap / brokery]
-    F -.->|alespoĹ jeden record nevyhovuje: INVALID_RECORD, broker nic nedostane| P
+    F -->|vše povoleno: ProduceRequest se přepošle| B[Strimzi Kafka bootstrap / brokery]
+    F -.->|alespoň jeden record nevyhovuje: INVALID_RECORD, broker nic nedostane| P
 ```
 
-OdmĂ­tnutĂ­:
+Odmítnutí:
 
 ```mermaid
 sequenceDiagram
@@ -96,79 +96,79 @@ sequenceDiagram
     K->>G: onProduceRequest
     G-->>K: errorResponse(INVALID_RECORD)
     K-->>P: ProduceResponse (INVALID_RECORD)
-    Note over B: nic neobdrĹľĂ­
+    Note over B: nic neobdrží
 ```
 
-* Producer se pĹ™ipojuje na `kafka-schema-guardian-bootstrap`, ne na Strimzi bootstrap Service.
-* Kroxylicious pĹ™episuje adresy brokerĹŻ v `Metadata` odpovÄ›dĂ­ch (`portIdentifiesNode`), takĹľe po bootstrapu klient
-  mluvĂ­ opÄ›t s proxy, nikoli pĹ™Ă­mo s brokerem. Detaily v [kapitole 12](#12-sĂ­tÄ›-kafka-metadata-a-strimzi).
-* Guardian je **prvnĂ­** filtr v `defaultFilters`: nic nesmĂ­ projĂ­t jinĂ˝m filtrem ani k brokeru, dokud ho neschvĂˇlĂ­.
-* Replika neudrĹľuje ĹľĂˇdnĂ˝ stav kromÄ› naÄŤtenĂ©ho nemÄ›nnĂ©ho whitelistu. VĹˇechny repliky ÄŤtou stejnĂ˝ ConfigMap.
+* Producer se připojuje na `kafka-schema-guardian-bootstrap`, ne na Strimzi bootstrap Service.
+* Kroxylicious přepisuje adresy brokerů v `Metadata` odpovědích (`portIdentifiesNode`), takže po bootstrapu klient
+  mluví opět s proxy, nikoli přímo s brokerem. Detaily v [kapitole 12](#12-sítě-kafka-metadata-a-strimzi).
+* Guardian je **první** filtr v `defaultFilters`: nic nesmí projít jiným filtrem ani k brokeru, dokud ho neschválí.
+* Replika neudržuje žádný stav kromě načteného neměnného whitelistu. Všechny repliky čtou stejný ConfigMap.
 
 ---
 
-## 3. ValidaÄŤnĂ­ algoritmus
+## 3. Validační algoritmus
 
 Implementace: [`RequestValidator`](src/main/java/cz/company/guardian/validation/RequestValidator.java) a
 [`RecordChecker`](src/main/java/cz/company/guardian/validation/RecordChecker.java).
 
-Pro kaĹľdĂ˝ record, v poĹ™adĂ­:
+Pro každý record, v pořadí:
 
-1. zjisti topic (Produce v13+ posĂ­lĂˇ jen `topicId`; jmĂ©no se pĹ™eloĹľĂ­ pĹ™es `FilterContext.topicNames`, coĹľ proxy cachuje),
-2. topic nenĂ­ ve whitelistu -> `TOPIC_NOT_CONFIGURED`,
+1. zjisti topic (Produce v13+ posílá jen `topicId`; jméno se přeloží přes `FilterContext.topicNames`, což proxy cachuje),
+2. topic není ve whitelistu -> `TOPIC_NOT_CONFIGURED`,
 3. hodnota je `null` -> `NULL_VALUE`,
-4. hodnota mĂˇ mĂ©nÄ› neĹľ 5 bajtĹŻ -> `PAYLOAD_TOO_SHORT`,
-5. bajt 0 nenĂ­ `0x00` -> `INVALID_MAGIC_BYTE`,
-6. bajty 1-4 se ÄŤtou jako big-endian `int` (schema ID),
-7. ID nenĂ­ v mnoĹľinÄ› povolenĂ˝ch ID tohoto topicu -> `SCHEMA_NOT_ALLOWED`,
-8. vĹˇechny recordy proĹˇly -> request se pĹ™epoĹˇle brokeru.
+4. hodnota má méně než 5 bajtů -> `PAYLOAD_TOO_SHORT`,
+5. bajt 0 není `0x00` -> `INVALID_MAGIC_BYTE`,
+6. bajty 1-4 se čtou jako big-endian `int` (schema ID),
+7. ID není v množině povolených ID tohoto topicu -> `SCHEMA_NOT_ALLOWED`,
+8. všechny recordy prošly -> request se přepošle brokeru.
 
-NavĂ­c: `MALFORMED_PRODUCE_REQUEST` (partition bez recordĹŻ, neÄŤitelnĂˇ nebo poĹˇkozenĂˇ dĂˇvka, control batch, request
-bez topicĹŻ) a `INTERNAL_VALIDATION_ERROR` (jakĂˇkoli vĂ˝jimka pĹ™i validaci). Request se zamĂ­tĂˇ pĹ™i **prvnĂ­m** poruĹˇenĂ­.
+Navíc: `MALFORMED_PRODUCE_REQUEST` (partition bez recordů, nečitelná nebo poškozená dávka, control batch, request
+bez topiců) a `INTERNAL_VALIDATION_ERROR` (jakákoli výjimka při validaci). Request se zamítá při **prvním** porušení.
 
-### PodporovanĂ˝ Confluent wire format
+### Podporovaný Confluent wire format
 
 ```
-byte 0      magic byte, vĹľdy 0
-byte 1-4    schema ID, big-endian int32 (platnĂˇ ID jsou >= 0; hodnota se zĂˇpornĂ˝m znamĂ©nkem nikdy nenĂ­ povolenĂˇ)
-byte 5+     serializovanĂ˝ payload: guardian ho neÄŤte
+byte 0      magic byte, vždy 0
+byte 1-4    schema ID, big-endian int32 (platná ID jsou >= 0; hodnota se záporným znaménkem nikdy není povolená)
+byte 5+     serializovaný payload: guardian ho nečte
 ```
 
-Rozhoduje **vĂ˝hradnÄ› schema ID**. Subject, verze a compatibility mode se neberou v Ăşvahu: je-li pro topic povoleno
-jen ID 150 (`customer-value` v3), zprĂˇvy s ID 100 (v1) a 120 (v2) se odmĂ­tnou, i kdyĹľ majĂ­ stejnĂ˝ subject.
+Rozhoduje **výhradně schema ID**. Subject, verze a compatibility mode se neberou v úvahu: je-li pro topic povoleno
+jen ID 150 (`customer-value` v3), zprávy s ID 100 (v1) a 120 (v2) se odmítnou, i když mají stejný subject.
 
-### AtomickĂˇ fail-closed politika
+### Atomická fail-closed politika
 
-Jeden `ProduceRequest` mĹŻĹľe obsahovat vĂ­c topicĹŻ, partitions a `RecordBatch`. SelĹľe-li **jedinĂ˝** record, odmĂ­tne se
-**celĂ˝ poĹľadavek** a brokeru se neposĂ­lĂˇ nic. Producer proto u zamĂ­tnutĂ© dĂˇvky nikdy nevidĂ­ ÄŤĂˇsteÄŤnĂ˝ ĂşspÄ›ch.
+Jeden `ProduceRequest` může obsahovat víc topiců, partitions a `RecordBatch`. Selže-li **jediný** record, odmítne se
+**celý požadavek** a brokeru se neposílá nic. Producer proto u zamítnuté dávky nikdy nevidí částečný úspěch.
 
 ---
 
-## 4. ChovĂˇnĂ­ vĹŻÄŤi producerĹŻm
+## 4. Chování vůči producerům
 
-PĹ™i odmĂ­tnutĂ­ dostane producer pro kaĹľdou partition `INVALID_RECORD` (kĂłd 87) s textem
+Při odmítnutí dostane producer pro každou partition `INVALID_RECORD` (kód 87) s textem
 `kafka-schema-guardian rejected the request: SCHEMA_NOT_ALLOWED topic=... partition=... recordIndex=... schemaId=...`
 (nikdy obsah recordu).
 
-`INVALID_RECORD` je **nereplikovatelnĂˇ** chyba: Java klient z nÄ›j vyrobĂ­ `InvalidRecordException`, kterĂˇ nenĂ­
-`RetriableException`, a dĂˇvka selĹľe okamĹľitÄ›. Chyby, kterĂ© klient automaticky opakuje (`NETWORK_EXCEPTION`,
-`REQUEST_TIMED_OUT`, `NOT_LEADER_OR_FOLLOWER`), se pro odmĂ­tnutĂ­ **nepouĹľĂ­vajĂ­**. Je to stejnĂˇ chyba, jakou vracĂ­
-broker pĹ™i vlastnĂ­ validaci zĂˇznamu. JednotkovĂ˝ test `kafkaClientsTreatTheChosenErrorAsNonRetriable` ovÄ›Ĺ™uje tĹ™Ă­du
-vĂ˝jimky proti `kafka-clients`.
+`INVALID_RECORD` je **nereplikovatelná** chyba: Java klient z něj vyrobí `InvalidRecordException`, která není
+`RetriableException`, a dávka selže okamžitě. Chyby, které klient automaticky opakuje (`NETWORK_EXCEPTION`,
+`REQUEST_TIMED_OUT`, `NOT_LEADER_OR_FOLLOWER`), se pro odmítnutí **nepoužívají**. Je to stejná chyba, jakou vrací
+broker při vlastní validaci záznamu. Jednotkový test `kafkaClientsTreatTheChosenErrorAsNonRetriable` ověřuje třídu
+výjimky proti `kafka-clients`.
 
-| Situace | ChovĂˇnĂ­ |
+| Situace | Chování |
 |---|---|
-| retries | zamĂ­tnutĂˇ dĂˇvka se neopakuje; poÄŤĂ­tĂˇ se jednou (viz test `recordWithDisallowedSchemaIdGetsNonRetriableErrorAndIsNotStored`) |
-| idempotentnĂ­ producer | po selhĂˇnĂ­ dĂˇvky pokraÄŤuje dalĹˇĂ­ dĂˇvkou (ovÄ›Ĺ™uje `producerKeepsWorkingAfterARejection` v integraÄŤnĂ­ch testech s brokerem) |
-| transakÄŤnĂ­ producer | chyba pĹ™evede transakci do *abortable* stavu: `commitTransaction()` selĹľe, aplikace volĂˇ `abortTransaction()` a zaÄŤne novou transakci |
-| `acks=1`, `acks=all` | producer dostane odpovÄ›ÄŹ s `INVALID_RECORD` |
-| **`acks=0`** | protokol pro `acks=0` odpovÄ›ÄŹ nemĂˇ. Proxy request zahodĂ­ (`drop`) a producer o odmĂ­tnutĂ­ **nezjistĂ­**. PoÄŤĂ­tĂˇ se v `kafka_schema_guardian_acks0_rejected_requests_total` a loguje (`acksZero=true`). Pro topicy s whitelistem `acks=0` zakaĹľte |
-| komprimovanĂ© dĂˇvky | Kroxylicious record API dĂˇvku dekomprimuje (gzip, snappy, lz4, zstd); bez toho se dovnitĹ™ nedĂˇ nahlĂ©dnout |
-| Produce v3-v13 | filtr nepĹ™epĂ­nĂˇ na `shouldHandleProduceRequest`, zpracuje vĹľdy; v13 (topic ID) je pokryt i integraÄŤnĂ­m testem |
+| retries | zamítnutá dávka se neopakuje; počítá se jednou (viz test `recordWithDisallowedSchemaIdGetsNonRetriableErrorAndIsNotStored`) |
+| idempotentní producer | po selhání dávky pokračuje další dávkou (ověřuje `producerKeepsWorkingAfterARejection` v integračních testech s brokerem) |
+| transakční producer | chyba převede transakci do *abortable* stavu: `commitTransaction()` selže, aplikace volá `abortTransaction()` a začne novou transakci |
+| `acks=1`, `acks=all` | producer dostane odpověď s `INVALID_RECORD` |
+| **`acks=0`** | protokol pro `acks=0` odpověď nemá. Proxy request zahodí (`drop`) a producer o odmítnutí **nezjistí**. Počítá se v `kafka_schema_guardian_acks0_rejected_requests_total` a loguje (`acksZero=true`). Pro topicy s whitelistem `acks=0` zakažte |
+| komprimované dávky | Kroxylicious record API dávku dekomprimuje (gzip, snappy, lz4, zstd); bez toho se dovnitř nedá nahlédnout |
+| Produce v3-v13 | filtr nepřepíná na `shouldHandleProduceRequest`, zpracuje vždy; v13 (topic ID) je pokryt i integračním testem |
 
-ScĂ©nĂˇĹ™e s reĂˇlnĂ˝m producerem (idempotentnĂ­, transakÄŤnĂ­, komprese, `acks`) jsou v
-[`SchemaGuardianProducerIT`](src/test/java/cz/company/guardian/it/SchemaGuardianProducerIT.java) a bÄ›ĹľĂ­ proti
-skuteÄŤnĂ©mu brokeru (viz [kapitola 8](#8-build-a-testy)).
+Scénáře s reálným producerem (idempotentní, transakční, komprese, `acks`) jsou v
+[`SchemaGuardianProducerIT`](src/test/java/cz/company/guardian/it/SchemaGuardianProducerIT.java) a běží proti
+skutečnému brokeru (viz [kapitola 8](#8-build-a-testy)).
 
 ---
 
@@ -186,7 +186,7 @@ defaultFilters:
   - schema-guardian
 ```
 
-Soubor s pravidly (v Kubernetes ConfigMap `kafka-schema-guardian-rules`, klĂ­ÄŤ `rules.yaml`):
+Soubor s pravidly (v Kubernetes ConfigMap `kafka-schema-guardian-rules`, klíč `rules.yaml`):
 
 ```yaml
 defaultPolicy: DENY
@@ -198,95 +198,95 @@ topics:
     allowedSchemaIds: [4, 5, 6]
 
 metrics:
-  includeSchemaIdLabel: false   # volitelnĂ©, vĂ˝chozĂ­ false
+  includeSchemaIdLabel: false   # volitelné, výchozí false
 logging:
-  maxRejectLogsPerSecond: 5     # volitelnĂ©, vĂ˝chozĂ­ 5
+  maxRejectLogsPerSecond: 5     # volitelné, výchozí 5
 ```
 
-Konfigurace se ÄŤte a **pĹ™Ă­snÄ› validuje jednou pĹ™i startu**; chyba = proxy nenastartuje (pod zĹŻstane neready,
-nic se neproxuje). Start selĹľe, pokud:
+Konfigurace se čte a **přísně validuje jednou při startu**; chyba = proxy nenastartuje (pod zůstane neready,
+nic se neproxuje). Start selže, pokud:
 
-* `defaultPolicy` chybĂ­ nebo nenĂ­ pĹ™esnÄ› `DENY`,
-* nenĂ­ definovĂˇn ĹľĂˇdnĂ˝ topic, nĂˇzev topicu je prĂˇzdnĂ˝ nebo nenĂ­ legĂˇlnĂ­ nĂˇzev Kafka topicu,
-* topic nemĂˇ ĹľĂˇdnĂ© `allowedSchemaIds`, ID je `null`, zĂˇpornĂ©, desetinnĂ©, Ĺ™etÄ›zec nebo mimo rozsah `int`,
-* soubor nenĂ­ validnĂ­ YAML/JSON, obsahuje neznĂˇmĂ˝ klĂ­ÄŤ, vĂ­ce YAML dokumentĹŻ, nebo je vÄ›tĹˇĂ­ neĹľ 1 MiB,
-* je topic (nebo jakĂ˝koli klĂ­ÄŤ) definovĂˇn dvakrĂˇt (detekce duplicit pĹ™i parsovĂˇnĂ­),
+* `defaultPolicy` chybí nebo není přesně `DENY`,
+* není definován žádný topic, název topicu je prázdný nebo není legální název Kafka topicu,
+* topic nemá žádné `allowedSchemaIds`, ID je `null`, záporné, desetinné, řetězec nebo mimo rozsah `int`,
+* soubor není validní YAML/JSON, obsahuje neznámý klíč, více YAML dokumentů, nebo je větší než 1 MiB,
+* je topic (nebo jakýkoli klíč) definován dvakrát (detekce duplicit při parsování),
 * soubor neexistuje.
 
-Whitelist se naÄŤte do nemÄ›nnĂ© struktury ([`Whitelist`](src/main/java/cz/company/guardian/validation/Whitelist.java):
-`Map.copyOf` topic -> [`SchemaIdSet`](src/main/java/cz/company/guardian/validation/SchemaIdSet.java), nemÄ›nnĂˇ
-open-addressing mnoĹľina primitivnĂ­ch `int`, vyhledĂˇnĂ­ O(1) bez boxovĂˇnĂ­). **Hot reload nenĂ­ implementovĂˇn**
-(Kroxylicious 0.25.1 nemĂˇ sledovĂˇnĂ­ souborĹŻ a atomickĂ˝ reload pluginovĂ© konfigurace by byl vlastnĂ­ nespolehlivĂˇ
-mechanika). ZmÄ›na whitelistu = rolling update, viz [kapitola 14](#14-zmÄ›na-whitelistu-rollback). Z toho plyne, Ĺľe
-nejsou ani metriky reloadĹŻ.
+Whitelist se načte do neměnné struktury ([`Whitelist`](src/main/java/cz/company/guardian/validation/Whitelist.java):
+`Map.copyOf` topic -> [`SchemaIdSet`](src/main/java/cz/company/guardian/validation/SchemaIdSet.java), neměnná
+open-addressing množina primitivních `int`, vyhledání O(1) bez boxování). **Hot reload není implementován**
+(Kroxylicious 0.25.1 nemá sledování souborů a atomický reload pluginové konfigurace by byl vlastní nespolehlivá
+mechanika). Změna whitelistu = rolling update, viz [kapitola 14](#14-změna-whitelistu-rollback). Z toho plyne, že
+nejsou ani metriky reloadů.
 
-Na hot path nenĂ­ ĹľĂˇdnĂ˝ vzdĂˇlenĂ˝ lookup, Schema Registry, disk, Kubernetes API, DNS, HTTP ani databĂˇze. JedinĂˇ
-sĂ­ĹĄovĂˇ operace je pĹ™eklad topic ID na jmĂ©no (Produce v13+): proxy ho Ĺ™eĹˇĂ­ `Metadata` poĹľadavkem na broker a cachuje
-per virtual cluster, ve filtru se volĂˇ jen pro ID, kterĂˇ v requestu nemajĂ­ jmĂ©no.
+Na hot path není žádný vzdálený lookup, Schema Registry, disk, Kubernetes API, DNS, HTTP ani databáze. Jediná
+síťová operace je překlad topic ID na jméno (Produce v13+): proxy ho řeší `Metadata` požadavkem na broker a cachuje
+per virtual cluster, ve filtru se volá jen pro ID, která v requestu nemají jméno.
 
 ---
 
-## 6. VĂ˝kon
+## 6. Výkon
 
-* ÄŚte se pouze `buffer.get(position)` a `buffer.getInt(position + 1)`; `position`, `limit` ani `mark` se nemÄ›nĂ­
-  (test `doesNotChangePositionLimitOrMark`). PoĹ™adĂ­ bajtĹŻ jinĂ© neĹľ big-endian se oĹˇetĹ™Ă­ bajt po bajtu.
-* Hodnota se nikdy nekopĂ­ruje do `byte[]`. FungujĂ­ heap, **direct**, **read-only** i **sliced** buffery (testy).
-* `Record.value()` v API Kroxylicious vracĂ­ `duplicate()` (malĂ˝ objekt, ĹľĂˇdnĂˇ kopie dat). U komprimovanĂ˝ch dĂˇvek musĂ­
-  Kroxylicious dĂˇvku rozbalit, to je cena za moĹľnost se dĂ­vat dovnitĹ™.
-* Na poĹľadavek vznikne jeden malĂ˝ vĂ˝slednĂ˝ objekt; na record ĹľĂˇdnĂˇ alokace v kĂłdu filtru. Lookup ve whitelistu
+* Čte se pouze `buffer.get(position)` a `buffer.getInt(position + 1)`; `position`, `limit` ani `mark` se nemění
+  (test `doesNotChangePositionLimitOrMark`). Pořadí bajtů jiné než big-endian se ošetří bajt po bajtu.
+* Hodnota se nikdy nekopíruje do `byte[]`. Fungují heap, **direct**, **read-only** i **sliced** buffery (testy).
+* `Record.value()` v API Kroxylicious vrací `duplicate()` (malý objekt, žádná kopie dat). U komprimovaných dávek musí
+  Kroxylicious dávku rozbalit, to je cena za možnost se dívat dovnitř.
+* Na požadavek vznikne jeden malý výsledný objekt; na record žádná alokace v kódu filtru. Lookup ve whitelistu
   neboxuje (`SchemaIdSet.contains(int)`).
-* Metriky: ÄŤĂ­taÄŤe pro topicy z whitelistu se vytvoĹ™Ă­ pĹ™i startu; na hot pathu jen atomickĂˇ inkrementace. PoÄŤet
-  ÄŤasovĂ˝ch Ĺ™ad je omezen (`__unconfigured__` pro neznĂˇmĂ© topicy, strop 1000 hodnot `schema_id`).
-* Filtr je bezstavovĂ˝ a nemÄ›nnĂ˝, sdĂ­lĂ­ se jen `GuardianRuntime` (nemÄ›nnĂ˝) a atomickĂ© ÄŤĂ­taÄŤe.
+* Metriky: čítače pro topicy z whitelistu se vytvoří při startu; na hot pathu jen atomická inkrementace. Počet
+  časových řad je omezen (`__unconfigured__` pro neznámé topicy, strop 1000 hodnot `schema_id`).
+* Filtr je bezstavový a neměnný, sdílí se jen `GuardianRuntime` (neměnný) a atomické čítače.
 
 ---
 
-## 7. LogovĂˇnĂ­ a metriky
+## 7. Logování a metriky
 
-### LogovĂˇnĂ­
+### Logování
 
-StrukturovanĂ© zĂˇznamy pĹ™es SLF4J (`addKeyValue`), pĹ™i odmĂ­tnutĂ­ jen:
-`event`, `timestamp`, `topic`, `partition`, `schemaId` (je-li ÄŤitelnĂ©), `reason`, `correlationId`, `sessionId`
-(neprĹŻhlednĂ© ID spojenĂ­ vygenerovanĂ© proxy, bez adresy a certifikĂˇtu), `virtualCluster`.
+Strukturované záznamy přes SLF4J (`addKeyValue`), při odmítnutí jen:
+`event`, `timestamp`, `topic`, `partition`, `schemaId` (je-li čitelné), `reason`, `correlationId`, `sessionId`
+(neprůhledné ID spojení vygenerované proxy, bez adresy a certifikátu), `virtualCluster`.
 
-Nikdy se neloguje payload, klĂ­ÄŤ, hlaviÄŤky, klientskĂ˝ certifikĂˇt ani hesla. JmĂ©no topicu pochĂˇzĂ­ od klienta, proto se
-pĹ™ed logovĂˇnĂ­m sanitizuje (jen legĂˇlnĂ­ znaky, jinak `<invalid>`). U `INTERNAL_VALIDATION_ERROR` se loguje jen typ vĂ˝jimky
-a mĂ­sto vyhozenĂ­, nikoli jejĂ­ zprĂˇva.
+Nikdy se neloguje payload, klíč, hlavičky, klientský certifikát ani hesla. Jméno topicu pochází od klienta, proto se
+před logováním sanitizuje (jen legální znaky, jinak `<invalid>`). U `INTERNAL_VALIDATION_ERROR` se loguje jen typ výjimky
+a místo vyhození, nikoli její zpráva.
 
-ZaplavenĂ­ logĹŻ brĂˇnĂ­ [`LogRateLimiter`](src/main/java/cz/company/guardian/logging/LogRateLimiter.java): nejvĂ˝Ĺˇe
-`maxRejectLogsPerSecond` Ĺ™ĂˇdkĹŻ za sekundu na virtual cluster (vĂ˝chozĂ­ 5); nĂˇsledujĂ­cĂ­ Ĺ™Ăˇdek hlĂˇsĂ­
-`suppressedSincePrevious`. HlavnĂ­m nĂˇstrojem pozorovatelnosti jsou metriky. S `KROXYLICIOUS_LOG_FORMAT=json` jdou
-dvojice klĂ­ÄŤ-hodnota do JSON vĂ˝stupu proxy (u vĂ˝chozĂ­ Logstash Ĺˇablony typicky do `mdc`; strukturu si ovÄ›Ĺ™te ve svĂ©m
-logovacĂ­m Ĺ™etÄ›zci).
+Zaplavení logů brání [`LogRateLimiter`](src/main/java/cz/company/guardian/logging/LogRateLimiter.java): nejvýše
+`maxRejectLogsPerSecond` řádků za sekundu na virtual cluster (výchozí 5); následující řádek hlásí
+`suppressedSincePrevious`. Hlavním nástrojem pozorovatelnosti jsou metriky. S `KROXYLICIOUS_LOG_FORMAT=json` jdou
+dvojice klíč-hodnota do JSON výstupu proxy (u výchozí Logstash šablony typicky do `mdc`; strukturu si ověřte ve svém
+logovacím řetězci).
 
 ### Prometheus metriky
 
-RegistrujĂ­ se do globĂˇlnĂ­ho Micrometer registry proxy a vystavujĂ­ se na `:9190/metrics`.
+Registrují se do globálního Micrometer registry proxy a vystavují se na `:9190/metrics`.
 
-| Metrika | Labely | VĂ˝znam |
+| Metrika | Labely | Význam |
 |---|---|---|
-| `kafka_schema_guardian_records_total` | `result=allowed\|rejected` | `allowed`: recordy v propuĹˇtÄ›nĂ˝ch requestech; `rejected`: prvnĂ­ poruĹˇujĂ­cĂ­ record (validace konÄŤĂ­ prvnĂ­ chybou) |
-| `kafka_schema_guardian_rejections_total` | `topic`, `reason` (+ volitelnÄ› `schema_id`) | odmĂ­tnutĂ© requesty. NeznĂˇmĂ© topicy sdĂ­lĂ­ `topic="__unconfigured__"` |
-| `kafka_schema_guardian_produce_requests_total` | `result=allowed\|rejected` | zpracovanĂ© `ProduceRequest`y |
-| `kafka_schema_guardian_internal_errors_total` | | vĂ˝jimky pĹ™i validaci (request byl odmĂ­tnut) |
-| `kafka_schema_guardian_acks0_rejected_requests_total` | | odmĂ­tnutĂ© requesty s `acks=0`, o nichĹľ producer nevĂ­ |
-| `kafka_schema_guardian_validation_duration_seconds` | histogram | doba validace jednoho requestu (bez pĹ™ekladu topic ID) |
-| `kafka_schema_guardian_configured_topics` | | poÄŤet topicĹŻ ve whitelistu |
-| `kafka_schema_guardian_rules_info` | `checksum` | vĹľdy 1; `checksum` je krĂˇtkĂ˝ SHA-256 pravidel, rozdĂ­lnĂ© repliky poznĂˇte podle vĂ­ce hodnot |
+| `kafka_schema_guardian_records_total` | `result=allowed\|rejected` | `allowed`: recordy v propuštěných requestech; `rejected`: první porušující record (validace končí první chybou) |
+| `kafka_schema_guardian_rejections_total` | `topic`, `reason` (+ volitelně `schema_id`) | odmítnuté requesty. Neznámé topicy sdílí `topic="__unconfigured__"` |
+| `kafka_schema_guardian_produce_requests_total` | `result=allowed\|rejected` | zpracované `ProduceRequest`y |
+| `kafka_schema_guardian_internal_errors_total` | | výjimky při validaci (request byl odmítnut) |
+| `kafka_schema_guardian_acks0_rejected_requests_total` | | odmítnuté requesty s `acks=0`, o nichž producer neví |
+| `kafka_schema_guardian_validation_duration_seconds` | histogram | doba validace jednoho requestu (bez překladu topic ID) |
+| `kafka_schema_guardian_configured_topics` | | počet topiců ve whitelistu |
+| `kafka_schema_guardian_rules_info` | `checksum` | vždy 1; `checksum` je krátký SHA-256 pravidel, rozdílné repliky poznáte podle více hodnot |
 
-Label `schema_id` je ve vĂ˝chozĂ­m stavu **vypnutĂ˝** (vysokĂˇ kardinalita). ZapĂ­nĂˇ se `metrics.includeSchemaIdLabel: true`;
-pak se vytvĂˇĹ™Ă­ jen pro `SCHEMA_NOT_ALLOWED` a nejvĂ˝Ĺˇe 1000 hodnot, dalĹˇĂ­ se slouÄŤĂ­ do `schema_id="other"`. Sady labelĹŻ
-tĂ©Ĺľe metriky musĂ­ bĂ˝t stejnĂ© pro vĹˇechny virtual clustery (Micrometer v proxy jinak registraci odmĂ­tne a proxy
+Label `schema_id` je ve výchozím stavu **vypnutý** (vysoká kardinalita). Zapíná se `metrics.includeSchemaIdLabel: true`;
+pak se vytváří jen pro `SCHEMA_NOT_ALLOWED` a nejvýše 1000 hodnot, další se sloučí do `schema_id="other"`. Sady labelů
+téže metriky musí být stejné pro všechny virtual clustery (Micrometer v proxy jinak registraci odmítne a proxy
 nenastartuje).
 
-UĹľiteÄŤnĂ© dotazy:
+Užitečné dotazy:
 
 ```promql
-# odmĂ­tnutĂ© requesty podle topicu a dĹŻvodu
+# odmítnuté requesty podle topicu a důvodu
 sum by (topic, reason) (rate(kafka_schema_guardian_rejections_total[5m]))
-# rozdĂ­lnĂˇ pravidla mezi replikami (bÄ›hem rolloutu krĂˇtce normĂˇlnĂ­)
+# rozdílná pravidla mezi replikami (během rolloutu krátce normální)
 count(count by (checksum) (kafka_schema_guardian_rules_info)) > 1
-# jakĂˇkoli internĂ­ chyba je incident
+# jakákoli interní chyba je incident
 increase(kafka_schema_guardian_internal_errors_total[5m]) > 0
 # p99 doby validace
 histogram_quantile(0.99, sum by (le) (rate(kafka_schema_guardian_validation_duration_seconds_bucket[5m])))
@@ -296,38 +296,38 @@ histogram_quantile(0.99, sum by (le) (rate(kafka_schema_guardian_validation_dura
 
 ## 8. Build a testy
 
-PoĹľadavky: JDK 21, `make` (volitelnÄ›). Maven wrapper je v repozitĂˇĹ™i (`./mvnw`, Maven 3.9.9 s kontrolnĂ­m souÄŤtem).
+Požadavky: JDK 21, `make` (volitelně). Maven wrapper je v repozitáři (`./mvnw`, Maven 3.9.9 s kontrolním součtem).
 
 ```bash
 make clean
 make test        # unit testy, bez Dockeru a brokeru
-make verify      # + integraÄŤnĂ­ testy + Enforcer + Spotless
+make verify      # + integrační testy + Enforcer + Spotless
 make package     # target/kafka-schema-guardian-1.0.0.jar
 make format      # Spotless apply
 ```
 
-Build je reprodukovatelnĂ˝: fixnĂ­ `project.build.outputTimestamp`, pinnutĂ© verze vĹˇech pluginĹŻ, BOM
+Build je reprodukovatelný: fixní `project.build.outputTimestamp`, pinnuté verze všech pluginů, BOM
 `kroxylicious-bom`/`jackson-bom`/`netty-bom`/`junit-bom`, Maven Enforcer (Java >= 21, Maven >= 3.9.6, `dependencyConvergence`,
-zĂˇkaz SNAPSHOT a `log4j:log4j`), Surefire (`*Test`), Failsafe (`*IT`), Spotless (kontrola ve fĂˇzi `verify`).
+zákaz SNAPSHOT a `log4j:log4j`), Surefire (`*Test`), Failsafe (`*IT`), Spotless (kontrola ve fázi `verify`).
 
 ### Testy
 
-| Vrstva | TĹ™Ă­da | PokrytĂ­ |
+| Vrstva | Třída | Pokrytí |
 |---|---|---|
-| unit | `RecordCheckerTest` | povolenĂ©/nepovolenĂ© ID, null, < 5 bajtĹŻ, magic byte, ID 0, `Integer.MAX_VALUE`, zĂˇpornĂ© ID, **direct / read-only / sliced** buffer, nezmÄ›nÄ›nĂ˝ `position`/`limit`/`mark` |
-| unit | `RequestValidatorTest` | vĂ­ce ID/topicĹŻ/partition, validnĂ­ mezi nevalidnĂ­mi a naopak, vĂ­ce batchĹŻ, komprese (gzip, lz4, snappy, zstd), idempotentnĂ­ a transakÄŤnĂ­ dĂˇvky, malformed, control batch, topic ID |
-| unit | `SchemaGuardianFilterTest` | forward vs. `INVALID_RECORD`, atomickĂ© odmĂ­tnutĂ­, `acks`, **vĂ˝jimka pĹ™i validaci** -> odmĂ­tnutĂ­, selhĂˇnĂ­ i pĹ™i sestavenĂ­ odpovÄ›di -> stage selĹľe a nic se nepĹ™epoĹˇle, Produce v13 |
-| unit | `RulesLoaderTest`, `ProxyConfigurationTemplatesTest` | vĹˇechny podmĂ­nky neĂşspÄ›ĹˇnĂ©ho startu, dodanĂ© konfigurace proxy projdou skuteÄŤnĂ˝m `ConfigParser` Kroxylicious |
-| unit | `GuardianMetricsTest`, `PrometheusExpositionTest`, `RejectLoggerTest`, `LogRateLimiterTest` | nĂˇzvy metrik, kardinalita, rate limit, ĹľĂˇdnĂ˝ payload v logu |
-| integraÄŤnĂ­ | `SchemaGuardianProxyIT` | **skuteÄŤnĂ˝ runtime Kroxylicious** pĹ™ed mock brokerem: odmĂ­tnutĂ˝ request broker neobdrĹľĂ­, atomicita, komprese, `acks=0`, Produce v13 s topic ID, restart, vĂ­ce replik, start s neplatnĂ˝mi pravidly |
-| integraÄŤnĂ­ | `SchemaGuardianProducerIT`, `SchemaGuardianWireIT`, `SchemaGuardianResilienceIT` | **skuteÄŤnĂ˝ broker** (in-VM Kafka z `kroxylicious-testing`): `KafkaProducer` (idempotentnĂ­, transakÄŤnĂ­, komprese, `acks`, retries), syrovĂ© `ProduceRequest` pro verze 3, 7, 9, 12, 13 a vĂ­c topicĹŻ najednou, restart, 3 repliky |
+| unit | `RecordCheckerTest` | povolené/nepovolené ID, null, < 5 bajtů, magic byte, ID 0, `Integer.MAX_VALUE`, záporné ID, **direct / read-only / sliced** buffer, nezměněný `position`/`limit`/`mark` |
+| unit | `RequestValidatorTest` | více ID/topiců/partition, validní mezi nevalidními a naopak, více batchů, komprese (gzip, lz4, snappy, zstd), idempotentní a transakční dávky, malformed, control batch, topic ID |
+| unit | `SchemaGuardianFilterTest` | forward vs. `INVALID_RECORD`, atomické odmítnutí, `acks`, **výjimka při validaci** -> odmítnutí, selhání i při sestavení odpovědi -> stage selže a nic se nepřepošle, Produce v13 |
+| unit | `RulesLoaderTest`, `ProxyConfigurationTemplatesTest` | všechny podmínky neúspěšného startu, dodané konfigurace proxy projdou skutečným `ConfigParser` Kroxylicious |
+| unit | `GuardianMetricsTest`, `PrometheusExpositionTest`, `RejectLoggerTest`, `LogRateLimiterTest` | názvy metrik, kardinalita, rate limit, žádný payload v logu |
+| integrační | `SchemaGuardianProxyIT` | **skutečný runtime Kroxylicious** před mock brokerem: odmítnutý request broker neobdrží, atomicita, komprese, `acks=0`, Produce v13 s topic ID, restart, více replik, start s neplatnými pravidly |
+| integrační | `SchemaGuardianProducerIT`, `SchemaGuardianWireIT`, `SchemaGuardianResilienceIT` | **skutečný broker** (in-VM Kafka z `kroxylicious-testing`): `KafkaProducer` (idempotentní, transakční, komprese, `acks`, retries), syrové `ProduceRequest` pro verze 3, 7, 9, 12, 13 a víc topiců najednou, restart, 3 repliky |
 
-IntegraÄŤnĂ­ testy s reĂˇlnĂ˝m brokerem jsou na Windows vypnutĂ© (`@DisabledOnOs`): in-VM Kafka tam padĂˇ na pĹ™ejmenovĂˇnĂ­
-adresĂˇĹ™ĹŻ logu (KAFKA-1194). SpouĹˇtÄ›jĂ­ se v CI na Linuxu (`make verify`) nebo v kontejneru s
-`TEST_CLUSTER_EXECUTION_MODE=CONTAINER`. `SchemaGuardianProxyIT` bÄ›ĹľĂ­ vĹˇude.
+Integrační testy s reálným brokerem jsou na Windows vypnuté (`@DisabledOnOs`): in-VM Kafka tam padá na přejmenování
+adresářů logu (KAFKA-1194). Spouštějí se v CI na Linuxu (`make verify`) nebo v kontejneru s
+`TEST_CLUSTER_EXECUTION_MODE=CONTAINER`. `SchemaGuardianProxyIT` běží všude.
 
 ```bash
-./mvnw verify -Dit.test=SchemaGuardianProxyIT   # jen integraÄŤnĂ­ testy bez brokeru
+./mvnw verify -Dit.test=SchemaGuardianProxyIT   # jen integrační testy bez brokeru
 ./mvnw verify -DskipITs                         # jen unit testy
 ```
 
@@ -335,12 +335,12 @@ adresĂˇĹ™ĹŻ logu (KAFKA-1194). SpouĹˇtÄ›jĂ­ se v CI na Linuxu (`ma
 
 ## 9. Docker image
 
-[Dockerfile](Dockerfile) je dvoustupĹovĂ˝:
+[Dockerfile](Dockerfile) je dvoustupňový:
 
 1. `maven:3.9.9-eclipse-temurin-21` (pinnuto digestem): `mvn verify -DskipITs` (unit testy, Enforcer, Spotless) a JAR,
-2. oficiĂˇlnĂ­ `quay.io/kroxylicious/proxy:0.25.1` (pinnuto digestem): pĹ™idĂˇ se JAR do `/opt/kroxylicious/libs/`, vĂ˝chozĂ­
-   bezpeÄŤnĂˇ konfigurace (mTLS, pravidla `DENY` pro neexistujĂ­cĂ­ topic) a `USER 185` (non-root). Entrypoint
-   (`tini` + `kroxylicious-start.sh`) zĹŻstĂˇvĂˇ z oficiĂˇlnĂ­ho image. Do image se nevklĂˇdajĂ­ ĹľĂˇdnĂ© certifikĂˇty ani klĂ­ÄŤe.
+2. oficiální `quay.io/kroxylicious/proxy:0.25.1` (pinnuto digestem): přidá se JAR do `/opt/kroxylicious/libs/`, výchozí
+   bezpečná konfigurace (mTLS, pravidla `DENY` pro neexistující topic) a `USER 185` (non-root). Entrypoint
+   (`tini` + `kroxylicious-start.sh`) zůstává z oficiálního image. Do image se nevkládají žádné certifikáty ani klíče.
 
 ```bash
 docker build -t kafka-schema-guardian:local .
@@ -351,10 +351,10 @@ docker build -t kafka-schema-guardian:local \
   --build-arg BUILDER_IMAGE=maven:3.9.9-eclipse-temurin-21 .
 ```
 
-Makefile (promÄ›nnĂ© `IMAGE_REGISTRY`, `IMAGE_REPOSITORY`, `IMAGE_TAG`, vĂ˝sledek `$(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY):$(IMAGE_TAG)`):
+Makefile (proměnné `IMAGE_REGISTRY`, `IMAGE_REPOSITORY`, `IMAGE_TAG`, výsledek `$(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY):$(IMAGE_TAG)`):
 
 ```bash
-make image IMAGE_TAG=1.0.0                         # lokĂˇlnĂ­ platforma
+make image IMAGE_TAG=1.0.0                         # lokální platforma
 make image CONTAINER_ENGINE=podman IMAGE_TAG=1.0.0 # nebo buildah
 make image-multiarch                               # linux/amd64 + linux/arm64
 
@@ -364,26 +364,26 @@ make image-push \
   IMAGE_TAG=1.0.0
 ```
 
-Multi-arch image (`linux/amd64`, `linux/arm64`) stavĂ­ `docker buildx` (`--push`), u Podmanu/Buildahu manifest list
-(`--manifest`, pak `manifest push --all`). Stage s Mavenem bÄ›ĹľĂ­ na platformÄ› build hostu, protoĹľe JAR je nezĂˇvislĂ˝ na
-architektuĹ™e.
+Multi-arch image (`linux/amd64`, `linux/arm64`) staví `docker buildx` (`--push`), u Podmanu/Buildahu manifest list
+(`--manifest`, pak `manifest push --all`). Stage s Mavenem běží na platformě build hostu, protože JAR je nezávislý na
+architektuře.
 
 ---
 
-## 10. LokĂˇlnĂ­ testovĂˇnĂ­
+## 10. Lokální testování
 
 ```bash
 make image IMAGE_REGISTRY=local IMAGE_REPOSITORY=kafka-schema-guardian IMAGE_TAG=local
 docker compose -f examples/local/docker-compose.yaml up
 ```
 
-JednouzlovĂ˝ Kafka (KRaft) dostupnĂ˝ **jen** pĹ™es guardian (`localhost:9192`; port brokeru se nepublikuje). Whitelist je
+Jednouzlový Kafka (KRaft) dostupný **jen** přes guardian (`localhost:9192`; port brokeru se nepublikuje). Whitelist je
 v [examples/local/rules.yaml](examples/local/rules.yaml): topic `orders`, ID 1 a 2.
 
 ```bash
 # povoleno (magic byte 0, schema ID 1)
 printf '\x00\x00\x00\x00\x01hello' | kafka-console-producer.sh --bootstrap-server localhost:9192 --topic orders
-# zamĂ­tnuto: ID 9 nenĂ­ ve whitelistu, producer dostane INVALID_RECORD
+# zamítnuto: ID 9 není ve whitelistu, producer dostane INVALID_RECORD
 printf '\x00\x00\x00\x00\x09hello' | kafka-console-producer.sh --bootstrap-server localhost:9192 --topic orders
 curl -s localhost:9190/metrics | grep kafka_schema_guardian
 ```
@@ -398,35 +398,35 @@ Namespace `kafka-proxy` (guardian), Strimzi v namespace `kafka` (cluster `my-clu
 | Soubor | Obsah |
 |---|---|
 | [`deploy/base/namespace.yaml`](deploy/base/namespace.yaml) | Namespace (Pod Security `restricted`) |
-| [`deploy/base/rules.yaml`](deploy/base/rules.yaml) | whitelist; Kustomize z nÄ›j generuje ConfigMap `kafka-schema-guardian-rules` |
-| [`deploy/base/proxy-config.yaml`](deploy/base/proxy-config.yaml) | konfigurace proxy -> ConfigMap `kafka-schema-guardian-config` (vĂ˝chozĂ­ mTLS) |
+| [`deploy/base/rules.yaml`](deploy/base/rules.yaml) | whitelist; Kustomize z něj generuje ConfigMap `kafka-schema-guardian-rules` |
+| [`deploy/base/proxy-config.yaml`](deploy/base/proxy-config.yaml) | konfigurace proxy -> ConfigMap `kafka-schema-guardian-config` (výchozí mTLS) |
 | [`deploy/base/deployment.yaml`](deploy/base/deployment.yaml) | 3 repliky, RollingUpdate, probes, resources, securityContext, topologySpread, anti-affinity |
 | [`deploy/base/service.yaml`](deploy/base/service.yaml) | `kafka-schema-guardian-bootstrap` (Kafka porty) a `kafka-schema-guardian-management` (health, metriky) |
 | [`deploy/base/poddisruptionbudget.yaml`](deploy/base/poddisruptionbudget.yaml), [`deploy/base/networkpolicy.yaml`](deploy/base/networkpolicy.yaml) | PDB (`maxUnavailable: 1`), NetworkPolicy |
-| [`deploy/secret-example.yaml`](deploy/secret-example.yaml) | **jen placeholdery** ÄŤtyĹ™ SecretĹŻ, do kustomization nepatĹ™Ă­ |
+| [`deploy/secret-example.yaml`](deploy/secret-example.yaml) | **jen placeholdery** čtyř Secretů, do kustomization nepatří |
 | [`deploy/optional/`](deploy/optional) | `servicemonitor.yaml` (Prometheus Operator), `hpa.yaml` |
 | [`deploy/overlays/tls`](deploy/overlays/tls), [`deploy/overlays/plaintext`](deploy/overlays/plaintext) | varianty konfigurace proxy |
-| [`deploy/helm/kafka-schema-guardian-chart`](deploy/helm/kafka-schema-guardian-chart) | Helm chart se stejnĂ˝m obsahem; publikuje se na Docker Hub jako OCI artefakt |
+| [`deploy/helm/kafka-schema-guardian-chart`](deploy/helm/kafka-schema-guardian-chart) | Helm chart se stejným obsahem; publikuje se na Docker Hub jako OCI artefakt |
 
 ### Kustomize
 
 ```bash
 kubectl apply -f deploy/base/namespace.yaml
-# vytvoĹ™te Secrety (viz deploy/secret-example.yaml a kapitolu 13), pak:
+# vytvořte Secrety (viz deploy/secret-example.yaml a kapitolu 13), pak:
 make deploy IMAGE_REGISTRY=registry.example.com IMAGE_REPOSITORY=platform/kafka-schema-guardian IMAGE_TAG=1.0.0
 make deploy KUSTOMIZE_DIR=deploy/overlays/tls        # varianta TLS
 make deploy-optional                                 # ServiceMonitor + HPA
 make undeploy
 ```
 
-Kustomize generuje oba ConfigMapy s hashem v nĂˇzvu, takĹľe **Ăşprava `rules.yaml` nebo `proxy-config.yaml` zmÄ›nĂ­ pod
-template a spustĂ­ RollingUpdate** (obdoba checksum anotace). Pody neprojdou readiness, dokud proxy neotevĹ™e Kafka porty,
-a to probÄ›hne aĹľ po ĂşspÄ›ĹˇnĂ©m naÄŤtenĂ­ a validaci whitelistu.
+Kustomize generuje oba ConfigMapy s hashem v názvu, takže **úprava `rules.yaml` nebo `proxy-config.yaml` změní pod
+template a spustí RollingUpdate** (obdoba checksum anotace). Pody neprojdou readiness, dokud proxy neotevře Kafka porty,
+a to proběhne až po úspěšném načtení a validaci whitelistu.
 
 ### Helm
 
 ```bash
-# z Docker Hubu (publikuje pipeline, viz kapitola 16); <ns> = vĂˇĹˇ Docker Hub namespace
+# z Docker Hubu (publikuje pipeline, viz kapitola 16); <ns> = váš Docker Hub namespace
 helm upgrade --install kafka-schema-guardian oci://registry-1.docker.io/<ns>/kafka-schema-guardian-chart \
   --version 1.0.0 \
   --namespace kafka-proxy --create-namespace \
@@ -434,7 +434,7 @@ helm upgrade --install kafka-schema-guardian oci://registry-1.docker.io/<ns>/kaf
   --set kafka.clusterName=my-cluster --set kafka.namespace=kafka \
   -f my-values.yaml          # rules.topics, nodeIdRanges, ...
 
-# nebo z pracovnĂ­ kopie
+# nebo z pracovní kopie
 helm upgrade --install kafka-schema-guardian deploy/helm/kafka-schema-guardian-chart \
   --namespace kafka-proxy --create-namespace \
   --set image.repository=docker.io/<ns>/kafka-schema-guardian \
@@ -442,32 +442,32 @@ helm upgrade --install kafka-schema-guardian deploy/helm/kafka-schema-guardian-c
   -f my-values.yaml
 ```
 
-BalĂ­ÄŤek z Docker Hubu mĂˇ `image.repository` uĹľ nastavenĂ˝ na image publikovanĂ˝ stejnĂ˝m bÄ›hem pipeline a `image.tag`
-odpovĂ­dĂˇ verzi chartu (`appVersion`). NĂˇzev chartu je `kafka-schema-guardian-chart`, aby nekolidoval s repozitĂˇĹ™em image;
-nĂˇzvy a labely Kubernetes zdrojĹŻ zĹŻstĂˇvajĂ­ `kafka-schema-guardian` (`nameOverride`).
+Balíček z Docker Hubu má `image.repository` už nastavený na image publikovaný stejným během pipeline a `image.tag`
+odpovídá verzi chartu (`appVersion`). Název chartu je `kafka-schema-guardian-chart`, aby nekolidoval s repozitářem image;
+názvy a labely Kubernetes zdrojů zůstávají `kafka-schema-guardian` (`nameOverride`).
 
-Chart vyĹľaduje v `values.yaml` aspoĹ `rules.topics` (jinak `helm template` skonÄŤĂ­ chybou), poÄŤĂ­tĂˇ porty brokerĹŻ z
-`proxy.nodeIdRanges` a do pod template dĂˇvĂˇ anotace `checksum/proxy-config` a `checksum/rules`. OvÄ›Ĺ™eno
-`helm lint` a `helm template` (Helm 4.3.1); `kubectl kustomize` ani nasazenĂ­ na cluster v tomto repozitĂˇĹ™i ovÄ›Ĺ™eny nebyly.
+Chart vyžaduje v `values.yaml` aspoň `rules.topics` (jinak `helm template` skončí chybou), počítá porty brokerů z
+`proxy.nodeIdRanges` a do pod template dává anotace `checksum/proxy-config` a `checksum/rules`. Ověřeno
+`helm lint` a `helm template` (Helm 4.3.1); `kubectl kustomize` ani nasazení na cluster v tomto repozitáři ověřeny nebyly.
 
-### VĂ˝chozĂ­ zdroje
+### Výchozí zdroje
 
 ```yaml
 requests: {cpu: 500m, memory: 512Mi}
 limits:   {cpu: "2",  memory: 2Gi}
 ```
 
-Jsou to vĂ˝chozĂ­ hodnoty bez zmÄ›Ĺ™enĂ­ na vaĹˇem provozu. CPU spotĹ™ebovĂˇvajĂ­ TLS, dekomprese dĂˇvek a Netty; pamÄ›ĹĄ
-heap (`JAVA_MAX_MEM_RATIO=60`) plus direct buffery Netty. Postup: spustit zĂˇtÄ›Ĺľ, sledovat `container_cpu_usage_seconds_total`
-a `container_memory_working_set_bytes`, `requests` nastavit na typickou zĂˇtÄ›Ĺľ, `limits.memory` s rezervou nad ĹˇpiÄŤku,
-a ĹˇkĂˇlovat poÄŤtem replik (HPA na CPU 70 %). PĹ™i `OOMKilled` zvyĹˇte `limits.memory` nebo sniĹľte `JAVA_MAX_MEM_RATIO`.
+Jsou to výchozí hodnoty bez změření na vašem provozu. CPU spotřebovávají TLS, dekomprese dávek a Netty; paměť
+heap (`JAVA_MAX_MEM_RATIO=60`) plus direct buffery Netty. Postup: spustit zátěž, sledovat `container_cpu_usage_seconds_total`
+a `container_memory_working_set_bytes`, `requests` nastavit na typickou zátěž, `limits.memory` s rezervou nad špičku,
+a škálovat počtem replik (HPA na CPU 70 %). Při `OOMKilled` zvyšte `limits.memory` nebo snižte `JAVA_MAX_MEM_RATIO`.
 
 ---
 
-## 12. SĂ­tÄ›, Kafka metadata a Strimzi
+## 12. Sítě, Kafka metadata a Strimzi
 
-Kafka klient po bootstrapu dostane v `Metadata` adresy brokerĹŻ a pĹ™ipojuje se na nÄ› pĹ™Ă­mo. Proto nestaÄŤĂ­ proxovat
-jen bootstrap. Kroxylicious proto **pĹ™episuje adresy brokerĹŻ** (virtual cluster, gateway `portIdentifiesNode`):
+Kafka klient po bootstrapu dostane v `Metadata` adresy brokerů a připojuje se na ně přímo. Proto nestačí proxovat
+jen bootstrap. Kroxylicious proto **přepisuje adresy brokerů** (virtual cluster, gateway `portIdentifiesNode`):
 
 ```yaml
 virtualClusters:
@@ -480,26 +480,26 @@ virtualClusters:
           advertisedBrokerAddressPattern: kafka-schema-guardian-bootstrap.kafka-proxy.svc.cluster.local
           nodeStartPort: 9093
           nodeIdRanges:
-            - {name: brokers, start: 0, end: 2}      # node ID Strimzi brokerĹŻ, rozsah je vÄŤetnÄ›
+            - {name: brokers, start: 0, end: 2}      # node ID Strimzi brokerů, rozsah je včetně
 ```
 
 | Co | Hodnota |
 |---|---|
 | Bootstrap adresa pro producery | `kafka-schema-guardian-bootstrap.kafka-proxy.svc.cluster.local:9092` |
-| Adresy brokerĹŻ, kterĂ© klient dostane | stejnĂ˝ DNS nĂˇzev, port `9093` (node 0), `9094` (node 1), `9095` (node 2) |
+| Adresy brokerů, které klient dostane | stejný DNS název, port `9093` (node 0), `9094` (node 1), `9095` (node 2) |
 | Upstream (Strimzi bootstrap) | `my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9093` |
-| Endpointy pro jednotlivĂ© brokery | ĹľĂˇdnĂ© samostatnĂ© Service: `kafka-schema-guardian-bootstrap` vystavuje vĹˇechny porty a **kaĹľdĂˇ replika obslouĹľĂ­ kaĹľdĂ˝ port** (broker se poznĂˇ podle portu) |
-| VnitĹ™nĂ­ pĹ™Ă­stup | DNS Service uvnitĹ™ clusteru; vnÄ›jĹˇĂ­ pĹ™Ă­stup by vyĹľadoval LoadBalancer/Ingress s `sniHostIdentifiesNode` (vlastnĂ­ hostname, wildcard certifikĂˇt) |
+| Endpointy pro jednotlivé brokery | žádné samostatné Service: `kafka-schema-guardian-bootstrap` vystavuje všechny porty a **každá replika obslouží každý port** (broker se pozná podle portu) |
+| Vnitřní přístup | DNS Service uvnitř clusteru; vnější přístup by vyžadoval LoadBalancer/Ingress s `sniHostIdentifiesNode` (vlastní hostname, wildcard certifikát) |
 
-Node ID musĂ­ odpovĂ­dat skuteÄŤnosti (`kubectl -n kafka get pods -l strimzi.io/kind=Kafka`, pĹ™Ă­padnÄ› `KafkaNodePool`);
-poÄŤet portĹŻ v Service, Deploymentu a NetworkPolicy se musĂ­ shodovat s `nodeIdRanges` (test
-`servicePortsMatchTheGatewayPorts`; v Helm chartu se poÄŤĂ­tajĂ­ automaticky). PĹ™ibude-li broker, pĹ™idejte jeho node ID
+Node ID musí odpovídat skutečnosti (`kubectl -n kafka get pods -l strimzi.io/kind=Kafka`, případně `KafkaNodePool`);
+počet portů v Service, Deploymentu a NetworkPolicy se musí shodovat s `nodeIdRanges` (test
+`servicePortsMatchTheGatewayPorts`; v Helm chartu se počítají automaticky). Přibude-li broker, přidejte jeho node ID
 a port.
 
-### ZabrĂˇnÄ›nĂ­ obejitĂ­ proxy
+### Zabránění obejití proxy
 
-* Klient dostane z `Metadata` jen adresy proxy; broker svou vnitĹ™nĂ­ adresu klientovi neĹ™ekne.
-* Brokery nesmĂ­ bĂ˝t dosaĹľitelnĂ© pro producery. NejlĂ©pe pĹ™Ă­mo ve Strimzi (`networkPolicyPeers` listeneru; Strimzi
+* Klient dostane z `Metadata` jen adresy proxy; broker svou vnitřní adresu klientovi neřekne.
+* Brokery nesmí být dosažitelné pro producery. Nejlépe přímo ve Strimzi (`networkPolicyPeers` listeneru; Strimzi
   vygeneruje NetworkPolicy):
 
 ```yaml
@@ -517,108 +517,108 @@ spec:
             podSelector: {matchLabels: {app.kubernetes.io/name: kafka-schema-guardian}}
 ```
 
-* Proxy mĂˇ NetworkPolicy: ingress jen z namespace s labelem `kafka-schema-guardian/access=allowed`, egress jen na DNS a
+* Proxy má NetworkPolicy: ingress jen z namespace s labelem `kafka-schema-guardian/access=allowed`, egress jen na DNS a
   na Strimzi brokery.
 
-### Strimzi: pĹ™ipojenĂ­ proxy
+### Strimzi: připojení proxy
 
-1. `KafkaUser` typu `tls` pro proxy (ACL `Write`, `Describe`, `Create` na chrĂˇnÄ›nĂ˝ch topicĂ­ch; viz limitace identity nĂ­Ĺľe).
-2. ZkopĂ­rujte do namespace `kafka-proxy`: `my-cluster-cluster-ca-cert` (klĂ­ÄŤ `ca.crt`) jako Secret
+1. `KafkaUser` typu `tls` pro proxy (ACL `Write`, `Describe`, `Create` na chráněných topicích; viz limitace identity níže).
+2. Zkopírujte do namespace `kafka-proxy`: `my-cluster-cluster-ca-cert` (klíč `ca.crt`) jako Secret
    `kafka-schema-guardian-upstream-ca` a Secret `KafkaUser`a (`user.crt`, `user.key`) jako
-   `kafka-schema-guardian-upstream-client` (klĂ­ÄŤe `tls.crt`, `tls.key`).
-3. `bootstrapServers`, namespace a jmĂ©no clusteru jsou v `clusterDefinitions` (Helm: `kafka.clusterName`, `kafka.namespace`,
+   `kafka-schema-guardian-upstream-client` (klíče `tls.crt`, `tls.key`).
+3. `bootstrapServers`, namespace a jméno clusteru jsou v `clusterDefinitions` (Helm: `kafka.clusterName`, `kafka.namespace`,
    `kafka.bootstrapHost`, `kafka.bootstrapPort`, `kafka.tls.*`).
 
-Guardian nemÄ›nĂ­ Strimzi image, nebÄ›ĹľĂ­ v brokerech a nevytvĂˇĹ™Ă­ vlastnĂ­ image brokeru.
+Guardian nemění Strimzi image, neběží v brokerech a nevytváří vlastní image brokeru.
 
 ---
 
 ## 13. PLAINTEXT, TLS a mTLS
 
-PouĹľĂ­vĂˇ se vĂ˝hradnÄ› TLS vrstva Kroxylicious; certifikĂˇty se naÄŤĂ­tajĂ­ z Kubernetes SecretĹŻ (volume mounty,
+Používá se výhradně TLS vrstva Kroxylicious; certifikáty se načítají z Kubernetes Secretů (volume mounty,
 `readOnly`), **nikdy ne z image**.
 
 | Varianta | Jak |
 |---|---|
-| mTLS (vĂ˝chozĂ­) | `deploy/` nebo Helm `mode=mtls` |
+| mTLS (výchozí) | `deploy/` nebo Helm `mode=mtls` |
 | TLS | `deploy/overlays/tls` nebo `mode=tls` |
-| PLAINTEXT | `deploy/overlays/plaintext` nebo `mode=plaintext` (jen dĹŻvÄ›ryhodnĂˇ sĂ­ĹĄ) |
-| Proxy -> Strimzi | TLS/mTLS vĹľdy (`clusterDefinitions[].tls`) |
+| PLAINTEXT | `deploy/overlays/plaintext` nebo `mode=plaintext` (jen důvěryhodná síť) |
+| Proxy -> Strimzi | TLS/mTLS vždy (`clusterDefinitions[].tls`) |
 
-| Secret | KlĂ­ÄŤe | PouĹľitĂ­ |
+| Secret | Klíče | Použití |
 |---|---|---|
-| `kafka-schema-guardian-server-tls` | `tls.crt`, `tls.key` | certifikĂˇt, kterĂ˝ proxy pĹ™edklĂˇdĂˇ producerĹŻm (TLS server). SAN musĂ­ obsahovat `kafka-schema-guardian-bootstrap.kafka-proxy.svc.cluster.local` |
-| `kafka-schema-guardian-client-ca` | `ca.crt` | CA, jĂ­ ovÄ›Ĺ™uje klientskĂ© certifikĂˇty producerĹŻ (`trustOptions.clientAuth: REQUIRED`) |
-| `kafka-schema-guardian-upstream-ca` | `ca.crt` | CA brokerĹŻ (proxy jako TLS klient) |
-| `kafka-schema-guardian-upstream-client` | `tls.crt`, `tls.key` | certifikĂˇt proxy vĹŻÄŤi brokerĹŻm (mTLS) |
+| `kafka-schema-guardian-server-tls` | `tls.crt`, `tls.key` | certifikát, který proxy předkládá producerům (TLS server). SAN musí obsahovat `kafka-schema-guardian-bootstrap.kafka-proxy.svc.cluster.local` |
+| `kafka-schema-guardian-client-ca` | `ca.crt` | CA, jí ověřuje klientské certifikáty producerů (`trustOptions.clientAuth: REQUIRED`) |
+| `kafka-schema-guardian-upstream-ca` | `ca.crt` | CA brokerů (proxy jako TLS klient) |
+| `kafka-schema-guardian-upstream-client` | `tls.crt`, `tls.key` | certifikát proxy vůči brokerům (mTLS) |
 
-### Rotace SecretĹŻ
+### Rotace Secretů
 
-Kroxylicious 0.25.1 naÄŤĂ­tĂˇ soubory s certifikĂˇty a klĂ­ÄŤi **pĹ™i startu virtual clusteru** a neimplementuje jejich
-automatickĂ© znovunaÄŤtenĂ­ (v runtime nenĂ­ ĹľĂˇdnĂ© sledovĂˇnĂ­ souborĹŻ). Kubernetes sice obsah mountovanĂ©ho Secretu
-aktualizuje, ale proxy dĂˇl pouĹľĂ­vĂˇ pĹŻvodnĂ­. Po rotaci je proto nutnĂ˝ rolling restart:
+Kroxylicious 0.25.1 načítá soubory s certifikáty a klíči **při startu virtual clusteru** a neimplementuje jejich
+automatické znovunačtení (v runtime není žádné sledování souborů). Kubernetes sice obsah mountovaného Secretu
+aktualizuje, ale proxy dál používá původní. Po rotaci je proto nutný rolling restart:
 
 ```bash
 kubectl -n kafka-proxy rollout restart deployment/kafka-schema-guardian
 ```
 
-Rolling restart je nutnĂ˝ pĹ™i zmÄ›nÄ› SecretĹŻ s certifikĂˇty/klĂ­ÄŤi, zmÄ›nÄ› `proxy-config.yaml` (Kustomize/Helm to udÄ›lajĂ­
-samy pĹ™es hash/checksum), zmÄ›nÄ› `rules.yaml` a pĹ™i zmÄ›nÄ› image. DoporuÄŤenĂ­: certifikĂˇty vydĂˇvejte pĹ™edem (cert-manager)
-a obmÄ›Ĺujte je s dostateÄŤnĂ˝m pĹ™edstihem pĹ™ed expiracĂ­; rotaci SecretĹŻ mĹŻĹľete automatizovat nĂˇstrojem typu Reloader.
+Rolling restart je nutný při změně Secretů s certifikáty/klíči, změně `proxy-config.yaml` (Kustomize/Helm to udělají
+samy přes hash/checksum), změně `rules.yaml` a při změně image. Doporučení: certifikáty vydávejte předem (cert-manager)
+a obměňujte je s dostatečným předstihem před expirací; rotaci Secretů můžete automatizovat nástrojem typu Reloader.
 
 ---
 
-## 14. ZmÄ›na whitelistu, rollback
+## 14. Změna whitelistu, rollback
 
-1. Upravte `deploy/base/rules.yaml` (nebo `rules.topics` v Helm values). Validace probÄ›hne pĹ™i startu kaĹľdĂ©ho podu.
-2. Aplikujte (`make deploy` / `helm upgrade`). NovĂ˝ ConfigMap mĂˇ jinĂ˝ hash, Deployment se rozjede rolling updatem
-   (`maxUnavailable: 0`, `maxSurge: 1`): novĂ˝ pod musĂ­ projĂ­t readiness (pravidla naÄŤtena a validnĂ­), teprve pak se
-   ukonÄŤĂ­ starĂ˝. **NeplatnĂ© pravidla tedy rollout zastavĂ­ a bÄ›ĹľĂ­cĂ­ repliky zĹŻstanou na starĂ˝ch pravidlech.**
-3. Kontrola: `kafka_schema_guardian_rules_info{checksum}` musĂ­ mĂ­t po rolloutu jedinou hodnotu.
+1. Upravte `deploy/base/rules.yaml` (nebo `rules.topics` v Helm values). Validace proběhne při startu každého podu.
+2. Aplikujte (`make deploy` / `helm upgrade`). Nový ConfigMap má jiný hash, Deployment se rozjede rolling updatem
+   (`maxUnavailable: 0`, `maxSurge: 1`): nový pod musí projít readiness (pravidla načtena a validní), teprve pak se
+   ukončí starý. **Neplatné pravidla tedy rollout zastaví a běžící repliky zůstanou na starých pravidlech.**
+3. Kontrola: `kafka_schema_guardian_rules_info{checksum}` musí mít po rolloutu jedinou hodnotu.
 
-Rollback: `kubectl -n kafka-proxy rollout undo deployment/kafka-schema-guardian` (vracĂ­ pĹ™edchozĂ­ pod template a tĂ­m
-i pĹ™edchozĂ­ ConfigMap), nebo `helm rollback kafka-schema-guardian`, nebo nĂˇvrat zmÄ›ny v Gitu a novĂ© nasazenĂ­.
-StarĹˇĂ­ ConfigMapy ponechte (Kustomize je pĹ™i `apply` nemaĹľe); rollback je potĹ™ebuje.
+Rollback: `kubectl -n kafka-proxy rollout undo deployment/kafka-schema-guardian` (vrací předchozí pod template a tím
+i předchozí ConfigMap), nebo `helm rollback kafka-schema-guardian`, nebo návrat změny v Gitu a nové nasazení.
+Starší ConfigMapy ponechte (Kustomize je při `apply` nemaže); rollback je potřebuje.
 
-BÄ›hem rolloutu mohou krĂˇtce koexistovat repliky se starĂ˝m a novĂ˝m whitelistem; producer se pĹ™i reconnectu dostane na
-libovolnou. PĹ™idĂˇvĂˇte-li schema ID, nasazujte whitelist **pĹ™ed** producery, kterĂ© ho zaÄŤnou pouĹľĂ­vat.
+Během rolloutu mohou krátce koexistovat repliky se starým a novým whitelistem; producer se při reconnectu dostane na
+libovolnou. Přidáváte-li schema ID, nasazujte whitelist **před** producery, které ho začnou používat.
 
 ---
 
-## 15. Dostupnost, ĹˇkĂˇlovĂˇnĂ­, nastavenĂ­ producerĹŻ
+## 15. Dostupnost, škálování, nastavení producerů
 
-* `replicas: 3`, `RollingUpdate`, `topologySpreadConstraints` (zĂłna a node), preferovanĂˇ `podAntiAffinity`,
+* `replicas: 3`, `RollingUpdate`, `topologySpreadConstraints` (zóna a node), preferovaná `podAntiAffinity`,
   `PodDisruptionBudget` (`maxUnavailable: 1`), `startupProbe`, `readinessProbe`, `livenessProbe`,
   `terminationGracePeriodSeconds: 45`.
-* **Graceful shutdown**: `preStop` poÄŤkĂˇ 10 s (Service stihne pod odebrat z endpointĹŻ), pak SIGTERM; proxy pĹ™estane
-  pĹ™ijĂ­mat spojenĂ­ a ÄŤekĂˇ aĹľ `drainTimeout` (10 s) na rozpracovanĂ© requesty, potom zavĹ™e event loopy
+* **Graceful shutdown**: `preStop` počká 10 s (Service stihne pod odebrat z endpointů), pak SIGTERM; proxy přestane
+  přijímat spojení a čeká až `drainTimeout` (10 s) na rozpracované requesty, potom zavře event loopy
   (`shutdownQuietPeriod: 2s`, `shutdownTimeout: 15s`).
-* Probes: proxy mĂˇ jedinĂ˝ health endpoint `/livez` (port 9190). Liveness a startup ho pouĹľĂ­vajĂ­. **Readiness je TCP
-  na bootstrap port**, kterĂ˝ se otevĹ™e aĹľ po ĂşspÄ›ĹˇnĂ©m startu virtual clusteru, tj. po naÄŤtenĂ­ whitelistu.
-* HPA (volitelnÄ›) na CPU, `optional/hpa.yaml` nebo `autoscaling.enabled=true`.
+* Probes: proxy má jediný health endpoint `/livez` (port 9190). Liveness a startup ho používají. **Readiness je TCP
+  na bootstrap port**, který se otevře až po úspěšném startu virtual clusteru, tj. po načtení whitelistu.
+* HPA (volitelně) na CPU, `optional/hpa.yaml` nebo `autoscaling.enabled=true`.
 
-### Dlouho ĹľijĂ­cĂ­ spojenĂ­
+### Dlouho žijící spojení
 
-NovĂ© repliky pĹ™i scale-outu **nepĹ™evezmou existujĂ­cĂ­ spojenĂ­**: Kafka spojenĂ­ je dlouhodobĂ© a TCP se mezi pody
-nepĹ™ebalancuje. NovĂˇ replika dostane jen novĂˇ spojenĂ­ (reconnect, novĂ˝ producer). Proto je ve vĂ˝chozĂ­ konfiguraci filtr
-`ConnectionExpiration` (`maxAge: 30m`, `jitter: 5m`): proxy po uplynutĂ­ stĂˇĹ™Ă­ spojenĂ­ zavĹ™e a producer se pĹ™es Service
-pĹ™ipojĂ­ znovu, tedy rovnomÄ›rnÄ›ji. Je to Ĺ™Ă­zenĂ˝ reconnect; kratĹˇĂ­ `maxAge` = rovnomÄ›rnÄ›jĹˇĂ­ rozloĹľenĂ­ za cenu ÄŤastÄ›jĹˇĂ­ch
-reconnectĹŻ. Vypnete ho odebrĂˇnĂ­m filtru z `filterDefinitions`/`defaultFilters` (Helm: `proxy.connectionExpiration.enabled=false`).
+Nové repliky při scale-outu **nepřevezmou existující spojení**: Kafka spojení je dlouhodobé a TCP se mezi pody
+nepřebalancuje. Nová replika dostane jen nová spojení (reconnect, nový producer). Proto je ve výchozí konfiguraci filtr
+`ConnectionExpiration` (`maxAge: 30m`, `jitter: 5m`): proxy po uplynutí stáří spojení zavře a producer se přes Service
+připojí znovu, tedy rovnoměrněji. Je to řízený reconnect; kratší `maxAge` = rovnoměrnější rozložení za cenu častějších
+reconnectů. Vypnete ho odebráním filtru z `filterDefinitions`/`defaultFilters` (Helm: `proxy.connectionExpiration.enabled=false`).
 
 ### Dopad rolling updatu
 
-Pod s bÄ›ĹľĂ­cĂ­mi spojenĂ­mi se ukonÄŤĂ­, producer dostane odpojenĂ­ a znovu navĂˇĹľe spojenĂ­ pĹ™es bootstrap. S idempotentnĂ­m
-producerem (vĂ˝chozĂ­ v klientech 3.x+) jsou opakovĂˇnĂ­ bezpeÄŤnĂˇ (bez duplicit); s `acks=0` se rozpracovanĂ© dĂˇvky ztratĂ­.
+Pod s běžícími spojeními se ukončí, producer dostane odpojení a znovu naváže spojení přes bootstrap. S idempotentním
+producerem (výchozí v klientech 3.x+) jsou opakování bezpečná (bez duplicit); s `acks=0` se rozpracované dávky ztratí.
 
-### DoporuÄŤenĂ© nastavenĂ­ producerĹŻ (bez zmÄ›ny aplikaÄŤnĂ­ho kĂłdu)
+### Doporučené nastavení producerů (bez změny aplikačního kódu)
 
 ```properties
-# klientskĂ© konfigurace, typicky pĹ™es externĂ­ soubor/ENV
+# klientské konfigurace, typicky přes externí soubor/ENV
 bootstrap.servers=kafka-schema-guardian-bootstrap.kafka-proxy.svc.cluster.local:9092
 enable.idempotence=true
 acks=all
 retries=2147483647
-delivery.timeout.ms=120000        # musĂ­ pĹ™eklenout rolling update (~1 minuta)
+delivery.timeout.ms=120000        # musí překlenout rolling update (~1 minuta)
 request.timeout.ms=30000
 retry.backoff.ms=200
 retry.backoff.max.ms=2000
@@ -627,7 +627,7 @@ reconnect.backoff.max.ms=5000
 metadata.max.age.ms=60000
 ```
 
-`INVALID_RECORD` se neopakuje a musĂ­ ho aplikace zpracovat jako chybu odeslĂˇnĂ­ (callback / `Future`).
+`INVALID_RECORD` se neopakuje a musí ho aplikace zpracovat jako chybu odeslání (callback / `Future`).
 
 ---
 
@@ -683,39 +683,39 @@ Pipeline jsem nespustil (chybí GitHub ani Docker); Helm balíček jsem ověřil
 ---
 ## 17. Troubleshooting
 
-| PĹ™Ă­znak | PĹ™Ă­ÄŤina / postup |
+| Příznak | Příčina / postup |
 |---|---|
-| Pod `CrashLoopBackOff`, v logu `Invalid rules ...` | whitelist je neplatnĂ˝ (viz seznam podmĂ­nek v kapitole 5); zprĂˇva vypĂ­Ĺˇe vĹˇechny nalezenĂ© chyby |
-| Pod `CrashLoopBackOff`, `does not exist` | chybĂ­ soubor v mountu (Secret s certifikĂˇtem, `rules.yaml`); pro zvolenĂ˝ reĹľim chybĂ­ Secret |
-| Pod `ContainerCreating` | chybĂ­ povinnĂ˝ Secret (`upstream-ca`, `upstream-client`) |
-| Producer: `InvalidRecordException ... kafka-schema-guardian: ...` | zĂˇznam nesplĹuje whitelist; `reason` ve zprĂˇvÄ› Ĺ™Ă­kĂˇ proÄŤ (`SCHEMA_NOT_ALLOWED`, `INVALID_MAGIC_BYTE`, ...) |
-| Producer visĂ­ na `Metadata` / `TimeoutException` | DNS nĂˇzev z `advertisedBrokerAddressPattern` nelze pĹ™eloĹľit, port brokeru nenĂ­ v Service/NetworkPolicy, nebo `nodeIdRanges` neodpovĂ­dĂˇ node ID Strimzi |
-| TLS handshake selĹľe | SAN certifikĂˇtu neobsahuje advertised hostname; v mTLS chybĂ­/nevÄ›Ĺ™Ă­ se klientskĂ©mu certifikĂˇtu |
-| `kafka_schema_guardian_internal_errors_total` roste | vĂ˝jimka ve validaci: request je odmĂ­tnut; najdÄ›te `validation_error` v logu (`exception`, `location`) |
-| Rejecty bez odpovÄ›di u producera | `acks=0`: viz `kafka_schema_guardian_acks0_rejected_requests_total` |
-| Po rolloutu jinĂ© chovĂˇnĂ­ mezi replikami | `count(count by (checksum) (kafka_schema_guardian_rules_info))`; poÄŤkejte na dokonÄŤenĂ­ rolloutu |
-| Po rotaci certifikĂˇtu proxy stĂˇle pĹ™edklĂˇdĂˇ starĂ˝ | proxy certifikĂˇty znovu nenaÄŤĂ­tĂˇ; `kubectl rollout restart` |
+| Pod `CrashLoopBackOff`, v logu `Invalid rules ...` | whitelist je neplatný (viz seznam podmínek v kapitole 5); zpráva vypíše všechny nalezené chyby |
+| Pod `CrashLoopBackOff`, `does not exist` | chybí soubor v mountu (Secret s certifikátem, `rules.yaml`); pro zvolený režim chybí Secret |
+| Pod `ContainerCreating` | chybí povinný Secret (`upstream-ca`, `upstream-client`) |
+| Producer: `InvalidRecordException ... kafka-schema-guardian: ...` | záznam nesplňuje whitelist; `reason` ve zprávě říká proč (`SCHEMA_NOT_ALLOWED`, `INVALID_MAGIC_BYTE`, ...) |
+| Producer visí na `Metadata` / `TimeoutException` | DNS název z `advertisedBrokerAddressPattern` nelze přeložit, port brokeru není v Service/NetworkPolicy, nebo `nodeIdRanges` neodpovídá node ID Strimzi |
+| TLS handshake selže | SAN certifikátu neobsahuje advertised hostname; v mTLS chybí/nevěří se klientskému certifikátu |
+| `kafka_schema_guardian_internal_errors_total` roste | výjimka ve validaci: request je odmítnut; najděte `validation_error` v logu (`exception`, `location`) |
+| Rejecty bez odpovědi u producera | `acks=0`: viz `kafka_schema_guardian_acks0_rejected_requests_total` |
+| Po rolloutu jiné chování mezi replikami | `count(count by (checksum) (kafka_schema_guardian_rules_info))`; počkejte na dokončení rolloutu |
+| Po rotaci certifikátu proxy stále předkládá starý | proxy certifikáty znovu nenačítá; `kubectl rollout restart` |
 
-ZapnutĂ­ podrobnÄ›jĹˇĂ­ho logu: `KROXYLICIOUS_APP_LOG_LEVEL=DEBUG` (pozor, DEBUG logy Kroxylicious mohou obsahovat
-metadata spojenĂ­; payload se neloguje).
+Zapnutí podrobnějšího logu: `KROXYLICIOUS_APP_LOG_LEVEL=DEBUG` (pozor, DEBUG logy Kroxylicious mohou obsahovat
+metadata spojení; payload se neloguje).
 
 ---
 
-## 18. BezpeÄŤnostnĂ­ omezenĂ­ a znĂˇmĂ© limitace
+## 18. Bezpečnostní omezení a známé limitace
 
-* **Guardian kontroluje jen strukturu hlaviÄŤky.** NeovÄ›Ĺ™Ă­, Ĺľe ID existuje v registru, Ĺľe payload odpovĂ­dĂˇ schĂ©matu, ani
-  Ĺľe producer schĂ©ma skuteÄŤnÄ› pouĹľil. Producer, kterĂ˝ poĹˇle `0x00` + povolenĂ© ID a libovolnĂ˝ payload, projde. Je to
-  zĂˇmÄ›r (rychlost, jednoduchost); jako bezpeÄŤnostnĂ­ hranici proti zlovolnĂ©mu producerovi to samo nestaÄŤĂ­.
-* Ochrana funguje jen pro provoz **pĹ™es proxy**: brokery musĂ­ bĂ˝t pro producery nedosaĹľitelnĂ© (kapitola 12).
-* Broker vidĂ­ vĹˇechny producery jako **jednu identitu proxy** (`KafkaUser` proxy). Per-producer ACL na brokeru nejsou
-  moĹľnĂ©; omezenĂ­ per-producer vyĹľaduje Kroxylicious autorizaÄŤnĂ­ filtr nebo jinĂ˝ mechanismus pĹ™ed guardianem.
-* `acks=0`: odmĂ­tnutĂ­ producer neuvidĂ­ (kapitola 4).
-* RozhodovĂˇnĂ­ se opĂ­rĂˇ o **prvnĂ­** poruĹˇenĂ­; metrika `records_total{result="rejected"}` proto poÄŤĂ­tĂˇ jen to jedno.
-* KomprimovanĂ© dĂˇvky se musĂ­ dekomprimovat: CPU cena. Control batche od klienta se odmĂ­tajĂ­.
-* Hot reload whitelistu a certifikĂˇtĹŻ nenĂ­. NeplatnĂˇ novĂˇ konfigurace tak nikdy neovlivnĂ­ bÄ›ĹľĂ­cĂ­ repliky.
-* Plugin zĂˇvisĂ­ na nepodporovanĂ©m (`...record.internal`) API Kroxylicious: vĹľdy aktualizujte spoleÄŤnÄ› s proxy (kapitola 1).
-* PĹ™eklad topic ID (Produce v13+) pouĹľĂ­vĂˇ `Metadata` poĹľadavek proxy na broker; pĹ™i nedostupnĂ©m brokeru se request
-  zamĂ­tne (`UNKNOWN_TOPIC_ID`, klient ho zopakuje po obnovÄ› metadat), nikdy neprojde.
-* Kroxylicious `shortCircuitResponse` u `acks=0` odpovÄ›ÄŹ zahazuje; guardian proto v tom pĹ™Ă­padÄ› volĂˇ `drop()`.
-* OvÄ›Ĺ™enĂ­: integraÄŤnĂ­ testy s reĂˇlnĂ˝m brokerem se vĂ˝vojovÄ› nebÄ›Ĺľely na Windows (viz kapitola 8) a image se v tomto
-  prostĹ™edĂ­ nesestavoval (chybĂ­ Docker); jednotkovĂ© testy a `SchemaGuardianProxyIT` proti skuteÄŤnĂ©mu runtime Kroxylicious bÄ›ĹľĂ­.
+* **Guardian kontroluje jen strukturu hlavičky.** Neověří, že ID existuje v registru, že payload odpovídá schématu, ani
+  že producer schéma skutečně použil. Producer, který pošle `0x00` + povolené ID a libovolný payload, projde. Je to
+  záměr (rychlost, jednoduchost); jako bezpečnostní hranici proti zlovolnému producerovi to samo nestačí.
+* Ochrana funguje jen pro provoz **přes proxy**: brokery musí být pro producery nedosažitelné (kapitola 12).
+* Broker vidí všechny producery jako **jednu identitu proxy** (`KafkaUser` proxy). Per-producer ACL na brokeru nejsou
+  možné; omezení per-producer vyžaduje Kroxylicious autorizační filtr nebo jiný mechanismus před guardianem.
+* `acks=0`: odmítnutí producer neuvidí (kapitola 4).
+* Rozhodování se opírá o **první** porušení; metrika `records_total{result="rejected"}` proto počítá jen to jedno.
+* Komprimované dávky se musí dekomprimovat: CPU cena. Control batche od klienta se odmítají.
+* Hot reload whitelistu a certifikátů není. Neplatná nová konfigurace tak nikdy neovlivní běžící repliky.
+* Plugin závisí na nepodporovaném (`...record.internal`) API Kroxylicious: vždy aktualizujte společně s proxy (kapitola 1).
+* Překlad topic ID (Produce v13+) používá `Metadata` požadavek proxy na broker; při nedostupném brokeru se request
+  zamítne (`UNKNOWN_TOPIC_ID`, klient ho zopakuje po obnově metadat), nikdy neprojde.
+* Kroxylicious `shortCircuitResponse` u `acks=0` odpověď zahazuje; guardian proto v tom případě volá `drop()`.
+* Ověření: integrační testy s reálným brokerem se vývojově neběžely na Windows (viz kapitola 8) a image se v tomto
+  prostředí nesestavoval (chybí Docker); jednotkové testy a `SchemaGuardianProxyIT` proti skutečnému runtime Kroxylicious běží.
