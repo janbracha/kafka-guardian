@@ -1,19 +1,27 @@
 name: build
 
-# Build, test, scan and publish the kafka-schema-guardian image.
-# Every step that does real work is a `make` target or one plain command, so this file ports to GitLab CI / Azure DevOps
-# by wrapping the same commands. Third-party actions are pinned to major versions here; pin them to commit SHAs in a
-# locked-down organisation.
+# Builds and tests the guardian, then publishes to Docker Hub:
+#   image  docker.io/<namespace>/kafka-schema-guardian        (linux/amd64 + linux/arm64)
+#   chart  oci://registry-1.docker.io/<namespace>/kafka-schema-guardian-chart
 #
-# Repository secrets:   REGISTRY_USERNAME, REGISTRY_PASSWORD
-# Repository variables: IMAGE_REGISTRY (e.g. registry.example.com), IMAGE_REPOSITORY (e.g. platform/kafka-schema-guardian),
-#                       COSIGN_ENABLED ("true" to sign the pushed image with Sigstore keyless signing)
+# Repository secrets:   DOCKERHUB_USERNAME, DOCKERHUB_TOKEN   (Docker Hub -> Account settings -> Personal access tokens, Read & Write)
+# Repository variables: DOCKERHUB_NAMESPACE (optional: the Docker Hub user or organisation; defaults to DOCKERHUB_USERNAME)
+#                       COSIGN_ENABLED      (optional: "true" signs the image and the chart with Sigstore keyless signing)
+#
+# When it publishes:
+#   push to main/master -> image and chart with the immutable version  <pom version>-g<commit>   (a pre-release for the chart)
+#   tag v1.2.3    -> the same, plus the release version 1.2.3 for both (the tag must equal the pom version)
+#   pull request  -> everything except the publishing (and no secrets are needed)
+#
+# Every step that does real work is a `make` target or a plain command, so the file ports to GitLab CI / Azure DevOps.
+# Third-party actions are pinned to major versions; pin them to commit SHAs in a locked-down organisation.
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
     tags: ["v*"]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -23,11 +31,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IMAGE_REGISTRY: ${{ vars.IMAGE_REGISTRY }}
-  IMAGE_REPOSITORY: ${{ vars.IMAGE_REPOSITORY }}
+  IMAGE_REGISTRY: docker.io
+  IMAGE_REPOSITORY: ${{ vars.DOCKERHUB_NAMESPACE || secrets.DOCKERHUB_USERNAME }}/kafka-schema-guardian
 
 jobs:
-  # 1-5: compile, unit tests, integration tests (real Kroxylicious + in-VM Kafka broker), static checks, plugin JAR.
+  # Compile, unit tests, integration tests (real Kroxylicious + in-VM Kafka broker), static checks, plugin JAR.
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -60,11 +68,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
-      - name: Helm lint and render
+      - name: Helm lint, render and package
         run: |
-          helm lint deploy/helm/kafka-schema-guardian
-          helm template ksg deploy/helm/kafka-schema-guardian --namespace kafka-proxy \
+          make helm-lint
+          helm template ksg deploy/helm/kafka-schema-guardian-chart --namespace kafka-proxy \
             --set serviceMonitor.enabled=true --set autoscaling.enabled=true > /tmp/helm.yaml
+          make helm-package IMAGE_REPOSITORY=example/kafka-schema-guardian IMAGE_TAG=0.0.0-gcheck
       - name: Kustomize render
         run: |
           kubectl kustomize deploy > /tmp/kustomize.yaml
@@ -75,7 +84,7 @@ jobs:
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz -C /tmp kubeconform
           /tmp/kubeconform -strict -summary -ignore-missing-schemas /tmp/helm.yaml /tmp/kustomize.yaml
 
-  # 6-11: image, vulnerability scan, SBOM, publish with an immutable tag, optional signature.
+  # Image: build, vulnerability scan, SBOM, publish with an immutable tag, optional signature.
   image:
     needs: [verify, manifests]
     runs-on: ubuntu-latest
@@ -83,18 +92,38 @@ jobs:
     permissions:
       contents: read
       id-token: write # Sigstore keyless signing
-    env:
-      CONTAINER_ENGINE: docker
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      release: ${{ steps.meta.outputs.release }}
+      digest: ${{ steps.push.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Compute the immutable tag
+      - name: Compute the versions
         id: meta
         run: |
           version=$(./mvnw -q -B -ntp org.apache.maven.plugins:maven-help-plugin:3.5.1:evaluate -Dexpression=project.version -DforceStdout)
+          release=false
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            if [[ "${GITHUB_REF_NAME#v}" != "${version}" ]]; then
+              echo "::error::Tag ${GITHUB_REF_NAME} does not match the pom version ${version}"
+              exit 1
+            fi
+            release=true
+          fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
-          # <version>-<commit>: never moves, so a deployment always points at exactly one build.
-          echo "tag=${version}-$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+          echo "release=${release}" >> "$GITHUB_OUTPUT"
+          # <version>-g<commit> never moves, and is a valid SemVer pre-release, so it is also usable as the chart version.
+          echo "tag=${version}-g$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      # Logging in also avoids the anonymous pull rate limit of Docker Hub for the Maven builder image.
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build the image (this runs the unit tests again inside the Dockerfile)
         run: make image IMAGE_REGISTRY=local IMAGE_REPOSITORY=kafka-schema-guardian IMAGE_TAG=${{ steps.meta.outputs.tag }}
@@ -123,34 +152,77 @@ jobs:
       - uses: docker/setup-buildx-action@v3
         if: github.event_name != 'pull_request'
 
-      - name: Log in to the registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ vars.IMAGE_REGISTRY }}
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
-
       # Only reached when everything above succeeded; pull requests never publish.
       - name: Publish the multi-architecture image (linux/amd64, linux/arm64)
         if: github.event_name != 'pull_request'
         id: push
         run: |
+          image="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}"
           make image-push IMAGE_TAG=${{ steps.meta.outputs.tag }}
-          digest=$(docker buildx imagetools inspect "${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}:${{ steps.meta.outputs.tag }}" --format '{{json .Manifest.Digest}}' | tr -d '"')
+          if [[ "${{ steps.meta.outputs.release }}" == "true" ]]; then
+            docker buildx imagetools create -t "${image}:${{ steps.meta.outputs.version }}" "${image}:${{ steps.meta.outputs.tag }}"
+          fi
+          digest=$(docker buildx imagetools inspect "${image}:${{ steps.meta.outputs.tag }}" --format '{{json .Manifest.Digest}}' | tr -d '"')
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
-          echo "Published ${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}@${digest}" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Image"
+            echo "\`docker pull ${image}@${digest}\`"
+            echo "Tags: ${{ steps.meta.outputs.tag }} ${{ steps.meta.outputs.release == 'true' && steps.meta.outputs.version || '' }}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install Cosign
         if: github.event_name != 'pull_request' && vars.COSIGN_ENABLED == 'true'
         uses: sigstore/cosign-installer@v3
 
-      - name: Sign the image by digest (keyless)
+      - name: Sign the image by digest (keyless) and attach the SBOM
         if: github.event_name != 'pull_request' && vars.COSIGN_ENABLED == 'true'
-        run: cosign sign --yes "${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}@${{ steps.push.outputs.digest }}"
+        run: |
+          ref="${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}@${{ steps.push.outputs.digest }}"
+          cosign sign --yes "${ref}"
+          cosign attest --yes --type spdxjson --predicate image-sbom.spdx.json "${ref}"
 
-      - name: Attach the SBOM to the signed image
-        if: github.event_name != 'pull_request' && vars.COSIGN_ENABLED == 'true'
-        run: >
-          cosign attest --yes --type spdxjson --predicate image-sbom.spdx.json
-          "${IMAGE_REGISTRY}/${IMAGE_REPOSITORY}@${{ steps.push.outputs.digest }}"
+  # Helm chart as an OCI artifact in Docker Hub. It runs only after the image it points at exists.
+  chart:
+    if: github.event_name != 'pull_request'
+    needs: [image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+
+      - name: Log in to Docker Hub (Helm registry)
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: echo "${DOCKERHUB_TOKEN}" | helm registry login registry-1.docker.io --username "${DOCKERHUB_USERNAME}" --password-stdin
+
+      # Chart version = image tag (<version>-g<commit>); a release tag additionally publishes the plain <version>.
+      - name: Package and push the chart
+        id: push
+        run: |
+          push() {
+            out=$(make helm-push IMAGE_TAG="$1" CHART_VERSION="$1" 2>&1 | tee /dev/stderr)
+            echo "$out" | sed -n 's/^Digest: //p' | tail -n1
+          }
+          digest=$(push "${{ needs.image.outputs.tag }}")
+          if [[ "${{ needs.image.outputs.release }}" == "true" ]]; then
+            push "${{ needs.image.outputs.version }}" > /dev/null
+          fi
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Helm chart"
+            echo "\`helm install kafka-schema-guardian oci://registry-1.docker.io/${IMAGE_REPOSITORY}-chart --version ${{ needs.image.outputs.tag }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check that the published chart can be pulled
+        run: helm show chart "oci://registry-1.docker.io/${IMAGE_REPOSITORY}-chart" --version "${{ needs.image.outputs.tag }}"
+
+      - uses: sigstore/cosign-installer@v3
+        if: vars.COSIGN_ENABLED == 'true'
+      - name: Sign the chart by digest (keyless)
+        if: vars.COSIGN_ENABLED == 'true' && steps.push.outputs.digest != ''
+        run: cosign sign --yes "registry-1.docker.io/${IMAGE_REPOSITORY}-chart@${{ steps.push.outputs.digest }}"

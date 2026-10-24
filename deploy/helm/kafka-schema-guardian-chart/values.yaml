@@ -1,5 +1,6 @@
 # Default values. Every key is documented in the README, chapter "Helm".
-nameOverride: ""
+# Keeps the resource names and labels at "kafka-schema-guardian" although the chart itself is called kafka-schema-guardian-chart.
+nameOverride: kafka-schema-guardian
 fullnameOverride: ""
 
 image:

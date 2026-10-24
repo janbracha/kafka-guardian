@@ -25,8 +25,14 @@ PLACEHOLDER_IMAGE := registry.example.com/platform/kafka-schema-guardian:1.0.0
 MVN       ?= ./mvnw
 MVN_FLAGS ?= -B -ntp
 
+# ---- Helm chart, published as an OCI artifact (Docker Hub: oci://registry-1.docker.io/<namespace>) ---------------------
+CHART_DIR         ?= deploy/helm/kafka-schema-guardian-chart
+CHART_VERSION     ?= $(IMAGE_TAG)
+HELM_REGISTRY_HOST ?= $(if $(filter docker.io,$(IMAGE_REGISTRY)),registry-1.docker.io,$(IMAGE_REGISTRY))
+HELM_OCI_REPO     ?= oci://$(HELM_REGISTRY_HOST)/$(patsubst %/,%,$(dir $(IMAGE_REPOSITORY)))
+
 .PHONY: help clean test verify package format image image-multiarch image-push deploy deploy-optional undeploy \
-        helm-lint helm-template
+        helm-lint helm-template helm-package helm-push
 
 help: ## list the targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-16s %s\n", $$1, $$2}'
@@ -100,8 +106,20 @@ undeploy: ## delete everything deploy created (Secrets are left alone)
 	$(KUBECTL) delete -k $(KUSTOMIZE_DIR) --ignore-not-found
 
 helm-lint: ## lint the Helm chart
-	helm lint deploy/helm/kafka-schema-guardian
+	helm lint $(CHART_DIR)
 
 helm-template: ## render the Helm chart
-	helm template kafka-schema-guardian deploy/helm/kafka-schema-guardian --namespace $(NAMESPACE) \
+	helm template kafka-schema-guardian $(CHART_DIR) --namespace $(NAMESPACE) \
 	  --set image.repository=$(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY) --set image.tag=$(IMAGE_TAG)
+
+# The chart version is the image tag, so a chart and the image it deploys always carry the same version.
+# The default image repository of the chart is rewritten to the published one in a temporary copy.
+helm-package: ## package the chart into target/helm (points at $(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY))
+	rm -rf target/helm && mkdir -p target/helm
+	cp -r $(CHART_DIR) target/helm/chart
+	sed -i.bak 's#^\(  repository: \).*#\1$(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)#' target/helm/chart/values.yaml
+	rm -f target/helm/chart/values.yaml.bak
+	helm package target/helm/chart --version $(CHART_VERSION) --app-version $(IMAGE_TAG) --destination target/helm
+
+helm-push: helm-package ## push the chart to $(HELM_OCI_REPO) (run helm registry login first)
+	helm push target/helm/kafka-schema-guardian-chart-$(CHART_VERSION).tgz $(HELM_OCI_REPO)
