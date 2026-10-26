@@ -317,7 +317,7 @@ Požadavky: JDK 21, `make` (volitelně). Maven wrapper je v repozitáři (`./mvn
 make clean
 make test        # unit testy, bez Dockeru a brokeru
 make verify      # + integrační testy + Enforcer + Spotless
-make package     # target/kafka-schema-guardian-1.1.0.jar
+make package     # target/kafka-schema-guardian-1.1.1.jar
 make format      # Spotless apply
 ```
 
@@ -369,14 +369,14 @@ docker build -t kafka-schema-guardian:local \
 Makefile (proměnné `IMAGE_REGISTRY`, `IMAGE_REPOSITORY`, `IMAGE_TAG`, výsledek `$(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY):$(IMAGE_TAG)`):
 
 ```bash
-make image IMAGE_TAG=1.1.0                         # lokální platforma
-make image CONTAINER_ENGINE=podman IMAGE_TAG=1.1.0 # nebo buildah
+make image IMAGE_TAG=1.1.1                         # lokální platforma
+make image CONTAINER_ENGINE=podman IMAGE_TAG=1.1.1 # nebo buildah
 make image-multiarch                               # linux/amd64 + linux/arm64
 
 make image-push \
   IMAGE_REGISTRY=registry.example.com \
   IMAGE_REPOSITORY=platform/kafka-schema-guardian \
-  IMAGE_TAG=1.1.0
+  IMAGE_TAG=1.1.1
 ```
 
 Multi-arch image (`linux/amd64`, `linux/arm64`) staví `docker buildx` (`--push`), u Podmanu/Buildahu manifest list
@@ -428,7 +428,7 @@ Namespace `kafka-proxy` (guardian), Strimzi v namespace `kafka` (cluster `my-clu
 ```bash
 kubectl apply -f deploy/base/namespace.yaml
 # vytvořte Secrety (viz deploy/secret-example.yaml a kapitolu 13), pak:
-make deploy IMAGE_REGISTRY=registry.example.com IMAGE_REPOSITORY=platform/kafka-schema-guardian IMAGE_TAG=1.1.0
+make deploy IMAGE_REGISTRY=registry.example.com IMAGE_REPOSITORY=platform/kafka-schema-guardian IMAGE_TAG=1.1.1
 make deploy KUSTOMIZE_DIR=deploy/overlays/tls        # varianta TLS
 make deploy-optional                                 # ServiceMonitor + HPA
 make undeploy
@@ -443,7 +443,7 @@ a to proběhne až po úspěšném načtení a validaci whitelistu.
 ```bash
 # z Docker Hubu (publikuje pipeline, viz kapitola 16); <ns> = váš Docker Hub namespace
 helm upgrade --install kafka-schema-guardian oci://registry-1.docker.io/<ns>/kafka-schema-guardian-chart \
-  --version 1.1.0 \
+  --version 1.1.1 \
   --namespace kafka-proxy --create-namespace \
   --set mode=mtls \
   --set kafka.clusterName=my-cluster --set kafka.namespace=kafka \
@@ -453,7 +453,7 @@ helm upgrade --install kafka-schema-guardian oci://registry-1.docker.io/<ns>/kaf
 helm upgrade --install kafka-schema-guardian deploy/helm/kafka-schema-guardian-chart \
   --namespace kafka-proxy --create-namespace \
   --set image.repository=docker.io/<ns>/kafka-schema-guardian \
-  --set image.tag=1.1.0 \
+  --set image.tag=1.1.1 \
   -f my-values.yaml
 ```
 
@@ -663,8 +663,8 @@ mimo pull requesty a jen po úspěchu všech předchozích kroků; PR nepotřebu
 
 | Událost | Tagy image a verze chartu |
 |---|---|
-| push do `main` nebo `master` | `1.1.0-g<commit>` (neměnný; pro chart validní SemVer pre-release) |
-| tag `v1.1.0` | totéž a navíc `1.1.0` (tag se musí rovnat verzi v `pom.xml`, jinak pipeline selže) |
+| push do `main` nebo `master` | `1.1.1-g<commit>` (neměnný; pro chart validní SemVer pre-release) |
+| tag `v1.1.1` | totéž a navíc `1.1.1` (tag se musí rovnat verzi v `pom.xml`, jinak pipeline selže) |
 
 Trivy sken ignoruje jen dva nálezy ve vestavěných knihovnách upstream image Kroxylicious 0.25.1 (`lz4-java` CVE-2026-106451, `wire-runtime` CVE-2026-63126), pro které zatím neexistuje opravený image. Výjimky jsou v `.trivyignore.yaml` s odůvodněním a **platností do 2026-11-30**; po vypršení pipeline znovu selže. Nové nálezy se neignorují.
 
@@ -676,7 +676,7 @@ Image se nikdy netaguje `latest`. Chart i image mají stejnou verzi, chart ukazu
 2. Secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
 3. Variables (volitelné): `DOCKERHUB_NAMESPACE` (uživatel nebo organizace; výchozí je `DOCKERHUB_USERNAME`),
    `COSIGN_ENABLED=true` (keyless podpis image a chartu přes OIDC).
-4. Vydání: změňte verzi v `pom.xml` a `Chart.yaml`, `git tag v1.1.0 && git push origin v1.1.0`.
+4. Vydání: změňte verzi v `pom.xml` a `Chart.yaml`, `git tag v1.1.1 && git push origin v1.1.1`.
 
 Repozitáře `kafka-schema-guardian` a `kafka-schema-guardian-chart` Docker Hub při prvním pushi vytvoří jako veřejné;
 privátní vytvořte předem.
@@ -685,9 +685,9 @@ Ruční publikace stejnými příkazy jako pipeline:
 
 ```bash
 docker login
-make image-push IMAGE_REGISTRY=docker.io IMAGE_REPOSITORY=<ns>/kafka-schema-guardian IMAGE_TAG=1.1.0
+make image-push IMAGE_REGISTRY=docker.io IMAGE_REPOSITORY=<ns>/kafka-schema-guardian IMAGE_TAG=1.1.1
 helm registry login registry-1.docker.io -u <user>
-make helm-push IMAGE_REGISTRY=docker.io IMAGE_REPOSITORY=<ns>/kafka-schema-guardian IMAGE_TAG=1.1.0
+make helm-push IMAGE_REGISTRY=docker.io IMAGE_REPOSITORY=<ns>/kafka-schema-guardian IMAGE_TAG=1.1.1
 ```
 
 Veškerá logika je v `make` cílech a obyčejných příkazech, takže převod do GitLab CI nebo Azure DevOps je přepsání kroků

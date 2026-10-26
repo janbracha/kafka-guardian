@@ -34,7 +34,9 @@ ARG PROXY_IMAGE
 # security fixes. Updating them here is what makes the Trivy gate pass; it needs root, the final user is set below.
 USER 0
 RUN microdnf -y --setopt=install_weak_deps=0 --setopt=tsflags=nodocs update \
-    && microdnf clean all
+    && microdnf clean all \
+    && mkdir -p /etc/kafka-schema-guardian/config /etc/kafka-schema-guardian/rules \
+    && chmod 0755 /etc/kafka-schema-guardian /etc/kafka-schema-guardian/config /etc/kafka-schema-guardian/rules
 
 # The proxy image runs as the non-root user 185; stated again so it can never silently change.
 USER 185
@@ -44,12 +46,18 @@ COPY --from=build --chown=0:0 --chmod=0444 /build/kafka-schema-guardian.jar /opt
 
 # Secure defaults: mTLS towards producers and Strimzi, deny-all rules. They need the Secrets described in the README, so
 # without them the proxy refuses to start. Kubernetes mounts the real files over these paths.
+# Files only: with --chmod, BuildKit would also give the implicitly created parent directories the mode 0444 (no x bit),
+# which hides every file mounted below them from uid 185. The directories are created with 0755 above.
 COPY --chown=0:0 --chmod=0444 deploy/base/proxy-config.yaml /etc/kafka-schema-guardian/config/proxy-config.yaml
 COPY --chown=0:0 --chmod=0444 docker/rules.yaml /etc/kafka-schema-guardian/rules/rules.yaml
 
+# Fails the build if the runtime user cannot reach its configuration.
+RUN test -x /etc/kafka-schema-guardian && test -x /etc/kafka-schema-guardian/config && test -x /etc/kafka-schema-guardian/rules \
+    && test -r /etc/kafka-schema-guardian/config/proxy-config.yaml && test -r /etc/kafka-schema-guardian/rules/rules.yaml
+
 EXPOSE 9092 9093 9094 9095 9190
 
-ARG VERSION=1.1.0
+ARG VERSION=1.1.1
 ARG VCS_REF=unknown
 LABEL org.opencontainers.image.title="kafka-schema-guardian" \
       org.opencontainers.image.description="Kroxylicious proxy with a filter that rejects Kafka records whose Confluent schema ID is not whitelisted" \

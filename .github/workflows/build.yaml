@@ -139,6 +139,13 @@ jobs:
           msg=$(tail -n 40 /tmp/image-build.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           echo "::error title=image build::${msg}"
 
+      # The proxy runs as a non-root user; it must be able to read its configuration, also when Kubernetes mounts files there.
+      - name: Smoke test (the runtime user reaches the configuration paths)
+        run: |
+          image=local/kafka-schema-guardian:${{ steps.meta.outputs.tag }}
+          docker run --rm --entrypoint sh "${image}" -c 'test "$(id -u)" != 0 && test -r /etc/kafka-schema-guardian/config/proxy-config.yaml && test -r /etc/kafka-schema-guardian/rules/rules.yaml'
+          docker run --rm --entrypoint sh -v "$PWD/deploy/base/rules.yaml:/etc/kafka-schema-guardian/rules/rules.yaml:ro" "${image}" -c 'head -n 1 /etc/kafka-schema-guardian/rules/rules.yaml'
+
       # The official Trivy image is pinned to a version; no third-party action is involved.
       - name: Vulnerability scan (fails on fixable HIGH/CRITICAL findings)
         run: |
