@@ -64,11 +64,11 @@ proxy:
 #   DENY  - producing to them is rejected
 rules:
   defaultPolicy: ALLOW
-  topics:
-    TEST:
-      allowedSchemaIds: [1, 2, 3]
-    TEST2:
-      allowedSchemaIds: [4, 5, 6]
+  # Required: at least one topic, set in your own values (no defaults, so nothing is merged into your list). Example:
+  # topics:
+  #   orders:
+  #     allowedSchemaIds: [1, 2]
+  topics: {}
   metrics:
     includeSchemaIdLabel: false
   logging:

@@ -5,7 +5,7 @@ SHELL := /bin/bash
 # ---- image coordinates: <registry>/<repository>:<tag> -------------------------------------------------------------
 IMAGE_REGISTRY   ?= registry.example.com
 IMAGE_REPOSITORY ?= platform/kafka-schema-guardian
-IMAGE_TAG        ?= 1.1.1
+IMAGE_TAG        ?= 1.1.2
 IMAGE            ?= $(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY):$(IMAGE_TAG)
 
 # ---- container tooling: docker | podman | buildah -----------------------------------------------------------------
@@ -20,7 +20,7 @@ KUBECTL       ?= kubectl
 NAMESPACE     ?= kafka-proxy
 # deploy | deploy/overlays/tls | deploy/overlays/plaintext
 KUSTOMIZE_DIR ?= deploy
-PLACEHOLDER_IMAGE := registry.example.com/platform/kafka-schema-guardian:1.1.1
+PLACEHOLDER_IMAGE := registry.example.com/platform/kafka-schema-guardian:1.1.2
 
 MVN       ?= ./mvnw
 MVN_FLAGS ?= -B -ntp
@@ -54,7 +54,7 @@ format: ## apply the Spotless formatting
 	$(MVN) $(MVN_FLAGS) spotless:apply
 
 # ---- image ----------------------------------------------------------------------------------------------------------
-# make image IMAGE_TAG=1.1.1 [CONTAINER_ENGINE=podman|buildah]   one image for the local platform
+# make image IMAGE_TAG=1.1.2 [CONTAINER_ENGINE=podman|buildah]   one image for the local platform
 # make image-push ...                                            amd64+arm64 manifest list, pushed to $(IMAGE)
 image: ## build the image for the local platform
 ifeq ($(CONTAINER_ENGINE),docker)
@@ -106,10 +106,10 @@ undeploy: ## delete everything deploy created (Secrets are left alone)
 	$(KUBECTL) delete -k $(KUSTOMIZE_DIR) --ignore-not-found
 
 helm-lint: ## lint the Helm chart
-	helm lint $(CHART_DIR)
+	helm lint $(CHART_DIR) -f deploy/helm/ci-values.yaml
 
 helm-template: ## render the Helm chart
-	helm template kafka-schema-guardian $(CHART_DIR) --namespace $(NAMESPACE) \
+	helm template kafka-schema-guardian $(CHART_DIR) --namespace $(NAMESPACE) -f deploy/helm/ci-values.yaml \
 	  --set image.repository=$(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY) --set image.tag=$(IMAGE_TAG)
 
 # The chart version is the image tag, so a chart and the image it deploys always carry the same version.

@@ -75,7 +75,7 @@ jobs:
       - name: Helm lint, render and package
         run: |
           make helm-lint
-          helm template ksg deploy/helm/kafka-schema-guardian-chart --namespace kafka-proxy \
+          helm template ksg deploy/helm/kafka-schema-guardian-chart --namespace kafka-proxy -f deploy/helm/ci-values.yaml \
             --set serviceMonitor.enabled=true --set autoscaling.enabled=true > /tmp/helm.yaml
           make helm-package IMAGE_REPOSITORY=example/kafka-schema-guardian IMAGE_TAG=0.0.0-gcheck
       - name: Kustomize render

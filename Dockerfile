@@ -57,7 +57,7 @@ RUN test -x /etc/kafka-schema-guardian && test -x /etc/kafka-schema-guardian/con
 
 EXPOSE 9092 9093 9094 9095 9190
 
-ARG VERSION=1.1.1
+ARG VERSION=1.1.2
 ARG VCS_REF=unknown
 LABEL org.opencontainers.image.title="kafka-schema-guardian" \
       org.opencontainers.image.description="Kroxylicious proxy with a filter that rejects Kafka records whose Confluent schema ID is not whitelisted" \

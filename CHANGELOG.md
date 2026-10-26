@@ -5,6 +5,18 @@ Verze v `pom.xml` a `Chart.yaml` se musí rovnat tagu `vX.Y.Z` (viz kapitola 16 
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-10-26
+
+### Opraveno
+- Helm chart: výchozí `rules.topics` už neobsahuje ukázkové topicy `TEST` a `TEST2`. Helm slučuje mapy, takže se
+  přidávaly k pravidlům uživatele (zejména v umbrella chartu, kde je nešlo odebrat ani přes `null` nebo `--set`).
+  Výchozí hodnota je prázdná (`{}`), `rules.topics` je nutné uvést ve vlastních values (chart bez nich skončí
+  chybou `rules.topics must define at least one topic`).
+
+### Změněno
+- `helm lint` a `helm template` v `make` a v pipeline používají `deploy/helm/ci-values.yaml`, protože chart sám
+  žádné topicy neobsahuje.
+
 ## [1.1.1] - 2026-10-26
 
 ### Opraveno
@@ -51,7 +63,8 @@ První vydání.
 ### Známé problémy
 - Image neobsahuje čitelnou konfiguraci pro uživatele proxy, viz 1.1.0. **Opraveno v 1.1.1.**
 
-[Unreleased]: https://github.com/janbracha/kafka-guardian/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/janbracha/kafka-guardian/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/janbracha/kafka-guardian/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/janbracha/kafka-guardian/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/janbracha/kafka-guardian/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/janbracha/kafka-guardian/releases/tag/v1.0.0

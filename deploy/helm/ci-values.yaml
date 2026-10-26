@@ -1,0 +1,5 @@
+# Values for helm lint/template in CI and make; the chart itself ships no topics.
+rules:
+  topics:
+    orders:
+      allowedSchemaIds: [1, 2]
