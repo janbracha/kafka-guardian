@@ -57,6 +57,30 @@ class RequestValidatorTest {
     }
 
     @Test
+    void allowPolicyDoesNotInspectUnlistedTopics() {
+        var lenient = new RequestValidator(Whitelist.of(Map.of("TEST", SchemaIdSet.of(1)), true));
+        byte[] notConfluent = { 1, 2, 3 };
+
+        var unlisted = lenient.validate(simpleRequest("OTHER", notConfluent), Map.of());
+        assertThat(unlisted.allowed()).isTrue();
+        assertThat(unlisted.checkedRecords()).isZero();
+
+        assertThat(lenient.validate(simpleRequest("TEST", frame(1)), Map.of()).allowed()).isTrue();
+        assertThat(lenient.validate(simpleRequest("TEST", frame(2)), Map.of()).violation().reason()).isEqualTo(RejectionReason.SCHEMA_NOT_ALLOWED);
+        assertThat(lenient.validate(simpleRequest("TEST", notConfluent), Map.of()).violation().reason()).isEqualTo(RejectionReason.PAYLOAD_TOO_SHORT);
+    }
+
+    @Test
+    void allowPolicyStillRejectsTheWholeRequestWhenAListedTopicViolates() {
+        var lenient = new RequestValidator(Whitelist.of(Map.of("TEST", SchemaIdSet.of(1)), true));
+        var request = request(
+                topic("OTHER", partition(0, records(new byte[]{ 9 }))),
+                topic("TEST", partition(0, records(frame(2)))));
+
+        assertThat(lenient.validate(request, Map.of()).violation().reason()).isEqualTo(RejectionReason.SCHEMA_NOT_ALLOWED);
+    }
+
+    @Test
     void schemaIdIsCheckedAgainstTheRecordsOwnTopic() {
         assertThat(validate(simpleRequest("TEST", frame(4))).violation().reason()).isEqualTo(RejectionReason.SCHEMA_NOT_ALLOWED);
         assertThat(validate(simpleRequest("TEST2", frame(4))).allowed()).isTrue();

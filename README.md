@@ -5,12 +5,13 @@
 # kafka-schema-guardian
 
 Kroxylicious filtr (Java 21), který kontroluje **každý Kafka `ProduceRequest`** dřív, než se dostane k brokeru.
-Z každého recordu čte jen topic, délku hodnoty, *magic byte* a *schema ID* podle Confluent wire formátu. Cokoli,
-co není explicitně povoleno v whitelistu `topic -> povolená schema ID`, se odmítne přímo v proxy a **broker o tom
-požadavku nikdy neuslyší**.
+Z každého recordu čte jen topic, délku hodnoty, *magic byte* a *schema ID* podle Confluent wire formátu. Topicy uvedené
+ve whitelistu `topic -> povolená schema ID` hlídá: cokoli, co není explicitně povoleno, se odmítne přímo v proxy a
+**broker o tom požadavku nikdy neuslyší**. Topicy, které ve whitelistu nejsou, se podle `defaultPolicy` buď nehlídají
+vůbec (`ALLOW`, doporučeno pro nasazení před existující cluster), nebo se odmítají (`DENY`).
 
 * Žádná deserializace Avro/Protobuf/JSON, žádný Schema Registry lookup, žádné kopírování ani logování payloadu.
-* Výchozí politika `DENY`, fail-closed: chyba konfigurace, výjimka při validaci nebo neočekávaná struktura požadavku
+* Fail-closed: chyba konfigurace, výjimka při validaci nebo neočekávaná struktura požadavku na hlídaném topicu
   nikdy neznamená propuštění zprávy.
 * Samostatný, bezstavový Kubernetes Deployment před existujícím Strimzi clusterem (ne sidecar).
 
@@ -115,7 +116,8 @@ Implementace: [`RequestValidator`](src/main/java/cz/company/guardian/validation/
 Pro každý record, v pořadí:
 
 1. zjisti topic (Produce v13+ posílá jen `topicId`; jméno se přeloží přes `FilterContext.topicNames`, což proxy cachuje),
-2. topic není ve whitelistu -> `TOPIC_NOT_CONFIGURED`,
+2. topic není ve whitelistu: s `defaultPolicy: ALLOW` se přeskočí (nic se nedekomprimuje ani nečte, cena je nulová),
+   s `defaultPolicy: DENY` -> `TOPIC_NOT_CONFIGURED`,
 3. hodnota je `null` -> `NULL_VALUE`,
 4. hodnota má méně než 5 bajtů -> `PAYLOAD_TOO_SHORT`,
 5. bajt 0 není `0x00` -> `INVALID_MAGIC_BYTE`,
@@ -189,7 +191,8 @@ defaultFilters:
 Soubor s pravidly (v Kubernetes ConfigMap `kafka-schema-guardian-rules`, klíč `rules.yaml`):
 
 ```yaml
-defaultPolicy: DENY
+# co se stane s topicy, které NEJSOU v seznamu níže: ALLOW = guardian si jich nevšímá, DENY = zápis se odmítne
+defaultPolicy: ALLOW
 
 topics:
   TEST:
@@ -206,12 +209,24 @@ logging:
 Konfigurace se čte a **přísně validuje jednou při startu**; chyba = proxy nenastartuje (pod zůstane neready,
 nic se neproxuje). Start selže, pokud:
 
-* `defaultPolicy` chybí nebo není přesně `DENY`,
+* `defaultPolicy` chybí nebo není přesně `DENY` nebo `ALLOW` (volba je záměrně povinná a explicitní),
 * není definován žádný topic, název topicu je prázdný nebo není legální název Kafka topicu,
 * topic nemá žádné `allowedSchemaIds`, ID je `null`, záporné, desetinné, řetězec nebo mimo rozsah `int`,
 * soubor není validní YAML/JSON, obsahuje neznámý klíč, více YAML dokumentů, nebo je větší než 1 MiB,
 * je topic (nebo jakýkoli klíč) definován dvakrát (detekce duplicit při parsování),
 * soubor neexistuje.
+
+### Co dělá `defaultPolicy`
+
+| Topic | `ALLOW` | `DENY` |
+|---|---|---|
+| je v seznamu `topics` | kontrola magic byte a schema ID proti jeho whitelistu | totéž |
+| není v seznamu | **guardian si ho nevšímá**: záznamy se nečtou ani nedekomprimují, request se přepošle | zápis se odmítne (`TOPIC_NOT_CONFIGURED`) |
+
+Při `ALLOW` guardian ovlivní jen topicy z whitelistu. Request s více topici se přepošle jen tehdy, když projdou všechny
+hlídané topicy v něm; porušení u jediného hlídaného topicu odmítne celý request. Výchozí hodnotu soubor nemá, `defaultPolicy`
+se musí uvést vždy. Image obsahuje záložní pravidla s `DENY` (nic neprojde, dokud nenamontujete vlastní), manifesty
+a Helm chart mají `ALLOW`.
 
 Whitelist se načte do neměnné struktury ([`Whitelist`](src/main/java/cz/company/guardian/validation/Whitelist.java):
 `Map.copyOf` topic -> [`SchemaIdSet`](src/main/java/cz/company/guardian/validation/SchemaIdSet.java), neměnná
@@ -707,6 +722,9 @@ metadata spojení; payload se neloguje).
   že producer schéma skutečně použil. Producer, který pošle `0x00` + povolené ID a libovolný payload, projde. Je to
   záměr (rychlost, jednoduchost); jako bezpečnostní hranici proti zlovolnému producerovi to samo nestačí.
 * Ochrana funguje jen pro provoz **přes proxy**: brokery musí být pro producery nedosažitelné (kapitola 12).
+* S `defaultPolicy: ALLOW` je chráněn jen topic, který je ve whitelistu. Zapomenutý nebo nově vytvořený topic zůstává bez
+  kontroly; kdo chce „vše zakázané, dokud není povoleno“, použije `DENY`. Metrika `records_total{result="allowed"}`
+  počítá jen zkontrolované recordy, ne ty z nehlídaných topiců.
 * Broker vidí všechny producery jako **jednu identitu proxy** (`KafkaUser` proxy). Per-producer ACL na brokeru nejsou
   možné; omezení per-producer vyžaduje Kroxylicious autorizační filtr nebo jiný mechanismus před guardianem.
 * `acks=0`: odmítnutí producer neuvidí (kapitola 4).

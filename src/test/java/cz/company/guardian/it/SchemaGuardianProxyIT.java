@@ -106,6 +106,22 @@ class SchemaGuardianProxyIT {
     }
 
     @Test
+    void withAllowPolicyOnlyListedTopicsAreGuarded() throws Exception {
+        rules = writeRules(dir, Map.of(TOPIC, new int[]{ 1 }), "ALLOW");
+        try (var tester = startProxy(); var client = tester.simpleTestClient()) {
+            assertThat(errors(produce(client, single("UNLISTED", new byte[]{ 1, 2, 3 })))).isEmpty();
+            assertThat(tester.getRequestsForApiKey(ApiKeys.PRODUCE)).hasSize(1);
+
+            assertThat(errors(produce(client, single(TOPIC, frame(9, "not whitelisted"))))).containsExactly(Errors.INVALID_RECORD.code());
+            assertThat(errors(produce(client, single(TOPIC, new byte[]{ 1, 2, 3 })))).containsExactly(Errors.INVALID_RECORD.code());
+            assertThat(tester.getRequestsForApiKey(ApiKeys.PRODUCE)).hasSize(1);
+
+            assertThat(errors(produce(client, single(TOPIC, frame(1, "ok"))))).isEmpty();
+            assertThat(tester.getRequestsForApiKey(ApiKeys.PRODUCE)).hasSize(2);
+        }
+    }
+
+    @Test
     void allowedRequestIsForwardedUnchanged() {
         try (var tester = startProxy(); var client = tester.simpleTestClient()) {
             ProduceResponseData response = produce(client, single(TOPIC, frame(1, "a"), frame(3, "b")));
@@ -239,7 +255,7 @@ class SchemaGuardianProxyIT {
     @Test
     void proxyRefusesToStartWhenRulesAreInvalid() throws Exception {
         Path invalid = dir.resolve("invalid.yaml");
-        java.nio.file.Files.writeString(invalid, "defaultPolicy: ALLOW\ntopics:\n  A:\n    allowedSchemaIds: [1]\n");
+        java.nio.file.Files.writeString(invalid, "defaultPolicy: PERMIT\ntopics:\n  A:\n    allowedSchemaIds: [1]\n");
 
         assertThatThrownBy(() -> kroxyliciousTester(proxyWithGuardian("localhost:9092", invalid)))
                 .hasStackTraceContaining("defaultPolicy");

@@ -96,8 +96,9 @@ public final class RulesLoader {
             errors.add("document is empty");
             return null;
         }
-        if (!"DENY".equals(document.defaultPolicy())) {
-            errors.add("defaultPolicy is required and must be DENY but was " + document.defaultPolicy());
+        boolean policyValid = "DENY".equals(document.defaultPolicy()) || "ALLOW".equals(document.defaultPolicy());
+        if (!policyValid) {
+            errors.add("defaultPolicy is required and must be DENY or ALLOW but was " + document.defaultPolicy());
         }
         Map<String, SchemaIdSet> topics = new LinkedHashMap<>();
         if (document.topics() == null || document.topics().isEmpty()) {
@@ -114,7 +115,7 @@ public final class RulesLoader {
                 errors.add("logging.maxRejectLogsPerSecond must be between 0 and " + MAX_LOGS_PER_SECOND_LIMIT);
             }
         }
-        return errors.isEmpty() ? new GuardianRules(Whitelist.of(topics), includeSchemaIdLabel, maxLogs, checksum) : null;
+        return errors.isEmpty() ? new GuardianRules(Whitelist.of(topics, "ALLOW".equals(document.defaultPolicy())), includeSchemaIdLabel, maxLogs, checksum) : null;
     }
 
     private static void validateTopic(String name, TopicRule rule, Map<String, SchemaIdSet> topics, List<String> errors) {

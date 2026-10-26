@@ -70,7 +70,7 @@ class SchemaGuardianTest {
 
     @Test
     void failsStartupWhenRulesAreInvalid(@TempDir Path dir) throws IOException {
-        Path file = rules(dir, "defaultPolicy: ALLOW\ntopics:\n  A:\n    allowedSchemaIds: [1]\n");
+        Path file = rules(dir, "defaultPolicy: PERMIT\ntopics:\n  A:\n    allowedSchemaIds: [1]\n");
 
         assertThatThrownBy(() -> factory.initialize(null, new GuardianConfig(file.toString())))
                 .isInstanceOf(PluginConfigurationException.class)

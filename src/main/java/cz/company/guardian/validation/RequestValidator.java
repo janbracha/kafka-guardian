@@ -73,6 +73,10 @@ public final class RequestValidator {
             }
             SchemaIdSet allowed = whitelist.allowedFor(topic);
             if (allowed == null) {
+                if (whitelist.allowsUnlisted()) {
+                    // Not guarded: the records are neither decompressed nor read.
+                    continue;
+                }
                 return rejected(scan, Violation.of(RejectionReason.TOPIC_NOT_CONFIGURED, topic, -1, -1));
             }
             List<PartitionProduceData> partitions = topicData.partitionData();

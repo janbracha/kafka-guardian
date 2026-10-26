@@ -72,6 +72,9 @@ ascending order and gives them consecutive ports starting at nodeStartPort.
 {{- if not .Values.rules.topics -}}
 {{- fail "rules.topics must define at least one topic" -}}
 {{- end -}}
+{{- if not (has .Values.rules.defaultPolicy (list "ALLOW" "DENY")) -}}
+{{- fail "rules.defaultPolicy must be ALLOW or DENY" -}}
+{{- end -}}
 {{- range $topic, $cfg := .Values.rules.topics -}}
 {{- if not $cfg.allowedSchemaIds -}}
 {{- fail (printf "topic %s needs at least one allowedSchemaIds entry" $topic) -}}

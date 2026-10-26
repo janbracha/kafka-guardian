@@ -51,7 +51,11 @@ final class ItSupport {
 
     /** Writes a rules file for the given topics and returns its path. */
     static Path writeRules(Path dir, Map<String, int[]> topics) throws IOException {
-        StringBuilder yaml = new StringBuilder("defaultPolicy: DENY\ntopics:\n");
+        return writeRules(dir, topics, "DENY");
+    }
+
+    static Path writeRules(Path dir, Map<String, int[]> topics, String defaultPolicy) throws IOException {
+        StringBuilder yaml = new StringBuilder("defaultPolicy: " + defaultPolicy + "\ntopics:\n");
         topics.forEach((topic, ids) -> {
             yaml.append("  ").append(topic).append(":\n    allowedSchemaIds:\n");
             for (int id : ids) {

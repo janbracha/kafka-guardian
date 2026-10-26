@@ -56,6 +56,12 @@ class RulesLoaderTest {
     }
 
     @Test
+    void denyPolicyRejectsUnlistedTopicsAndAllowPolicyLetsThemPass() {
+        assertThat(parse(VALID).whitelist().allowsUnlisted()).isFalse();
+        assertThat(parse(VALID.replace("DENY", "ALLOW")).whitelist().allowsUnlisted()).isTrue();
+    }
+
+    @Test
     void acceptsJson() {
         GuardianRules rules = parse("{\"defaultPolicy\":\"DENY\",\"topics\":{\"A\":{\"allowedSchemaIds\":[10,20]}}}");
 
@@ -94,8 +100,8 @@ class RulesLoaderTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = { "ALLOW", "deny", "Deny", "", "PERMIT" })
-    void failsWhenDefaultPolicyIsNotDeny(String policy) {
+    @ValueSource(strings = { "allow", "deny", "Deny", "", "PERMIT" })
+    void failsWhenDefaultPolicyIsNeitherDenyNorAllow(String policy) {
         assertInvalid("defaultPolicy: \"" + policy + "\"\ntopics:\n  A:\n    allowedSchemaIds: [1]\n", "defaultPolicy");
     }
 
@@ -191,7 +197,7 @@ class RulesLoaderTest {
 
     @Test
     void reportsAllProblemsAtOnce() {
-        assertThatThrownBy(() -> parse("defaultPolicy: ALLOW\ntopics:\n  A:\n    allowedSchemaIds: [-1]\n"))
+        assertThatThrownBy(() -> parse("defaultPolicy: PERMIT\ntopics:\n  A:\n    allowedSchemaIds: [-1]\n"))
                 .hasMessageContaining("defaultPolicy")
                 .hasMessageContaining("negative schema id");
     }

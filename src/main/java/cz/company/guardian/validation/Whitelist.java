@@ -9,17 +9,32 @@ import java.util.TreeMap;
 public final class Whitelist {
 
     private final Map<String, SchemaIdSet> topics;
+    private final boolean allowUnlisted;
 
-    private Whitelist(Map<String, SchemaIdSet> topics) {
+    private Whitelist(Map<String, SchemaIdSet> topics, boolean allowUnlisted) {
         this.topics = topics;
+        this.allowUnlisted = allowUnlisted;
     }
 
+    /** Topics that are not listed are denied. */
     public static Whitelist of(Map<String, SchemaIdSet> topics) {
-        Objects.requireNonNull(topics, "topics");
-        return new Whitelist(Map.copyOf(topics));
+        return of(topics, false);
     }
 
-    /** @return the allowed IDs, or {@code null} if the topic is not configured (default policy: DENY) */
+    /**
+     * @param allowUnlisted {@code true}: topics that are not listed are not inspected at all (default policy ALLOW);
+     *            {@code false}: they are rejected (default policy DENY)
+     */
+    public static Whitelist of(Map<String, SchemaIdSet> topics, boolean allowUnlisted) {
+        Objects.requireNonNull(topics, "topics");
+        return new Whitelist(Map.copyOf(topics), allowUnlisted);
+    }
+
+    public boolean allowsUnlisted() {
+        return allowUnlisted;
+    }
+
+    /** @return the allowed IDs, or {@code null} if the topic is not listed (then {@link #allowsUnlisted()} decides) */
     public SchemaIdSet allowedFor(String topic) {
         return topic == null ? null : topics.get(topic);
     }

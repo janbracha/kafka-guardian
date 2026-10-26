@@ -58,8 +58,12 @@ proxy:
   javaMaxMemRatio: 60
   extraEnv: []
 
-# The whitelist. Only schema IDs are matched, never subjects or versions. The defaultPolicy is always DENY.
+# The whitelist. Only schema IDs are matched, never subjects or versions.
+# defaultPolicy decides about topics that are NOT listed below:
+#   ALLOW - they are not inspected at all, the guardian only guards the listed topics
+#   DENY  - producing to them is rejected
 rules:
+  defaultPolicy: ALLOW
   topics:
     TEST:
       allowedSchemaIds: [1, 2, 3]

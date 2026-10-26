@@ -1,6 +1,7 @@
 # Whitelist of Confluent schema IDs per topic. Loaded once at start up; a change needs a rolling restart.
 # Kustomize turns this file into a ConfigMap whose name carries a content hash, so editing it rolls the Deployment.
-defaultPolicy: DENY
+# defaultPolicy is the policy for topics that are NOT listed below: ALLOW = not inspected, DENY = rejected.
+defaultPolicy: ALLOW
 
 topics:
   TEST:
