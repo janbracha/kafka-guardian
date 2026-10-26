@@ -59,7 +59,7 @@ spec:
       containers:
         - name: proxy
           # Replaced by the kustomize "images" transformer (make deploy sets it from IMAGE_REGISTRY/IMAGE_REPOSITORY/IMAGE_TAG).
-          image: registry.example.com/platform/kafka-schema-guardian:1.0.0
+          image: registry.example.com/platform/kafka-schema-guardian:1.1.0
           imagePullPolicy: IfNotPresent
           args:
             - --config

@@ -24,7 +24,7 @@ configMapGenerator:
 # make deploy overrides this with IMAGE_REGISTRY/IMAGE_REPOSITORY:IMAGE_TAG (kustomize edit set image).
 images:
   - name: registry.example.com/platform/kafka-schema-guardian
-    newTag: 1.0.0
+    newTag: 1.1.0
 
 # Not applied by default (need CRDs or are a matter of taste): see optional/, applied with  make deploy-optional
 # Secrets are never part of this kustomization; create them as described in secret-example.yaml.

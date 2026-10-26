@@ -49,7 +49,7 @@ COPY --chown=0:0 --chmod=0444 docker/rules.yaml /etc/kafka-schema-guardian/rules
 
 EXPOSE 9092 9093 9094 9095 9190
 
-ARG VERSION=1.0.0
+ARG VERSION=1.1.0
 ARG VCS_REF=unknown
 LABEL org.opencontainers.image.title="kafka-schema-guardian" \
       org.opencontainers.image.description="Kroxylicious proxy with a filter that rejects Kafka records whose Confluent schema ID is not whitelisted" \

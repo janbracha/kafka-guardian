@@ -5,7 +5,7 @@ SHELL := /bin/bash
 # ---- image coordinates: <registry>/<repository>:<tag> -------------------------------------------------------------
 IMAGE_REGISTRY   ?= registry.example.com
 IMAGE_REPOSITORY ?= platform/kafka-schema-guardian
-IMAGE_TAG        ?= 1.0.0
+IMAGE_TAG        ?= 1.1.0
 IMAGE            ?= $(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY):$(IMAGE_TAG)
 
 # ---- container tooling: docker | podman | buildah -----------------------------------------------------------------
@@ -20,7 +20,7 @@ KUBECTL       ?= kubectl
 NAMESPACE     ?= kafka-proxy
 # deploy | deploy/overlays/tls | deploy/overlays/plaintext
 KUSTOMIZE_DIR ?= deploy
-PLACEHOLDER_IMAGE := registry.example.com/platform/kafka-schema-guardian:1.0.0
+PLACEHOLDER_IMAGE := registry.example.com/platform/kafka-schema-guardian:1.1.0
 
 MVN       ?= ./mvnw
 MVN_FLAGS ?= -B -ntp
@@ -54,7 +54,7 @@ format: ## apply the Spotless formatting
 	$(MVN) $(MVN_FLAGS) spotless:apply
 
 # ---- image ----------------------------------------------------------------------------------------------------------
-# make image IMAGE_TAG=1.0.0 [CONTAINER_ENGINE=podman|buildah]   one image for the local platform
+# make image IMAGE_TAG=1.1.0 [CONTAINER_ENGINE=podman|buildah]   one image for the local platform
 # make image-push ...                                            amd64+arm64 manifest list, pushed to $(IMAGE)
 image: ## build the image for the local platform
 ifeq ($(CONTAINER_ENGINE),docker)
