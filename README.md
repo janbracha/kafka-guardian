@@ -676,7 +676,8 @@ Image se nikdy netaguje `latest`. Chart i image mají stejnou verzi, chart ukazu
 2. Secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
 3. Variables (volitelné): `DOCKERHUB_NAMESPACE` (uživatel nebo organizace; výchozí je `DOCKERHUB_USERNAME`),
    `COSIGN_ENABLED=true` (keyless podpis image a chartu přes OIDC).
-4. Vydání: změňte verzi v `pom.xml` a `Chart.yaml`, `git tag v1.1.1 && git push origin v1.1.1`.
+4. Vydání: změňte verzi v `pom.xml` a `Chart.yaml`, přesuňte změny z `[Unreleased]` v [CHANGELOG.md](CHANGELOG.md)
+   pod novou verzi a datum, pak `git tag v1.1.1 && git push origin v1.1.1`.
 
 Repozitáře `kafka-schema-guardian` a `kafka-schema-guardian-chart` Docker Hub při prvním pushi vytvoří jako veřejné;
 privátní vytvořte předem.
